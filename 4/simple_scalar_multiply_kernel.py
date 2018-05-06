@@ -15,11 +15,8 @@ __global__ void scalar_multiply_kernel(float *outvec, float scalar, float *vec)
 scalar_multiply_gpu = ker.get_function("scalar_multiply_kernel")
 
 testvec = np.random.randn(512).astype(np.float32)
-
 testvec_gpu = gpuarray.to_gpu(testvec)
-outvec_gpu = gpuarray.zeros_like(testvec_gpu)
-
-np.zeros_like(testvec)
+outvec_gpu = gpuarray.empty_like(testvec_gpu)
 
 scalar_multiply_gpu( outvec_gpu, np.float32(2), testvec_gpu, block=(512,1,1), grid=(1,1,1))
 
