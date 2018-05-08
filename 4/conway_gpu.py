@@ -78,10 +78,7 @@ if __name__ == '__main__':
     lattice_gpu = gpuarray.to_gpu(lattice)
     
     newLattice_gpu = gpuarray.empty_like(lattice_gpu)
-    
-    updateInterval = 0.5
-    
-    
+ 
 
     fig, ax = plt.subplots()
     img = ax.imshow(lattice_gpu.get(), interpolation='nearest')
