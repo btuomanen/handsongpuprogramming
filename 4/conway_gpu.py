@@ -21,11 +21,12 @@ ker = SourceModule("""
 
 #define _INDEX(x,y)  ( _XM(x)  + _YM(y) * _WIDTH )
 
+// return the number of living neighbors for a given cell                
 __device__ int nbrs(int x, int y, int * in)
 {
-     return in[ _INDEX(x -1, y+1) ] + in[ _INDEX(x-1, y) ] + in[ _INDEX(x-1, y-1) ] \
+     return ( in[ _INDEX(x -1, y+1) ] + in[ _INDEX(x-1, y) ] + in[ _INDEX(x-1, y-1) ] \
                    + in[ _INDEX(x, y+1)] + in[_INDEX(x, y - 1)] \
-                   + in[ _INDEX(x+1, y+1) ] + in[ _INDEX(x+1, y) ] + in[ _INDEX(x+1, y-1) ];
+                   + in[ _INDEX(x+1, y+1) ] + in[ _INDEX(x+1, y) ] + in[ _INDEX(x+1, y-1) ] );
 }
 
 __global__ void conway_ker(int * lattice_out, int * lattice  )
@@ -77,7 +78,7 @@ def update_gpu(frameNum, img, newLattice_gpu, lattice_gpu, N):
 
 if __name__ == '__main__':
     # set lattice size
-    N = 256
+    N = 128
     
     lattice = np.int32( np.random.choice([1,0], N*N, p=[0.25, 0.75]).reshape(N, N) )
     lattice_gpu = gpuarray.to_gpu(lattice)
@@ -86,6 +87,6 @@ if __name__ == '__main__':
 
     fig, ax = plt.subplots()
     img = ax.imshow(lattice_gpu.get(), interpolation='nearest')
-    ani = animation.FuncAnimation(fig, update_gpu, fargs=(img, newLattice_gpu, lattice_gpu, N, ) , interval=0, frames=100, save_count=100)    
+    ani = animation.FuncAnimation(fig, update_gpu, fargs=(img, newLattice_gpu, lattice_gpu, N, ) , interval=0, frames=1000, save_count=1000)    
      
     plt.show()
