@@ -82,7 +82,7 @@ if __name__ == '__main__':
     
     lattice = np.int32( np.random.choice([1,0], N*N, p=[0.25, 0.75]).reshape(N, N) )
     lattice_gpu = gpuarray.to_gpu(lattice)
-    conway_ker(lattice_gpu, np.int32(10), grid=(1,1,1), block=(32,32,1))
+    conway_ker(lattice_gpu, np.int32(100000), grid=(1,1,1), block=(32,32,1))
     fig = plt.figure(1)
     plt.imshow(lattice_gpu.get())
     
