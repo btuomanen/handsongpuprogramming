@@ -64,7 +64,7 @@ __global__ void conway_ker(int * lattice, int iters)
              
         __syncthreads();
         lattice[_INDEX(x,y)] = cell_value;
-         
+        __syncthreads(); 
     }
          
 }
