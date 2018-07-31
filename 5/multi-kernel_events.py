@@ -53,6 +53,7 @@ for k in range(num_arrays):
 for k in range(num_arrays):
     start_events[k].record(streams[k])
     mult_ker(data_gpu[k], np.int32(array_len), block=(64,1,1), grid=(1,1,1), stream=streams[k])
+for k in range(num_arrays):
     end_events[k].record(streams[k])
     
 # copy arrays from GPU.
