@@ -2,6 +2,7 @@ import numpy as np
 from pycuda import gpuarray
 import pycuda.driver as drv
 
+drv.init()
 dev = drv.Device(0)
 ctx = dev.make_context()
 
