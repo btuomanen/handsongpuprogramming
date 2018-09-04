@@ -44,8 +44,8 @@ def conv_2d(ker, img):
     
     padded_ker[:ker.shape[0], :ker.shape[1]] = ker
     
-    np.roll(padded_ker, shift=ker.shape[0]//2, axis=0)
-    np.roll(padded_ker, shift=ker.shape[0]//2, axis=1)
+    padded_ker = np.roll(padded_ker, shift=-ker.shape[0]//2, axis=0)
+    padded_ker = np.roll(padded_ker, shift=-ker.shape[1]//2, axis=1)
     
     padded_img = np.zeros_like(padded_ker).astype(np.float32)
     
