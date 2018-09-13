@@ -68,7 +68,7 @@ __global__ void monte_carlo(int iters, %(p)s lo, %(p)s hi, %(p)s * ys_out)
 
 class MonteCarloIntegrator:
     
-    def __init__(self, math_function='y = sin(x)', precision='d', lo=0, hi=np.pi, samples_per_thread=10**4, num_blocks=100):
+    def __init__(self, math_function='y = sin(x)', precision='d', lo=0, hi=np.pi, samples_per_thread=10**5, num_blocks=100):
         
         self.math_function = math_function
         
@@ -93,7 +93,7 @@ class MonteCarloIntegrator:
         
         self.MonteCarloCode = MonteCarloKernelTemplate % MonteCarloDict
         
-        self.ker = SourceModule(no_extern_c=True , source=self.MonteCarloCode)
+        self.ker = SourceModule(no_extern_c=True , options=['-w'], source=self.MonteCarloCode)
         
         self.f = self.ker.get_function('monte_carlo')
         
@@ -133,11 +133,10 @@ class MonteCarloIntegrator:
     
 if __name__ == '__main__':
 
-    other_func = 'y = _R( 1 + sinh(2*x)*_P2(log(x)) )'
-
-    lo = .8
-    hi = 3
+    integral_tests = [('y =log(x)*_P2(sin(x))', 11.733 , 18.472, 8.9999), ('y = _P2(sin(x))', 1.85, 36.81,  17.5922) , ('y = _R( 1 + sinh(2*x)*_P2(log(x)) )', .9, 4, .584977)]
     
-    mci = MonteCarloIntegrator(math_function=other_func, lo=lo, hi=hi)
-
-    print 'The Monte Carlo numerical integration of the function f: x -> %s from x = %s to x = %s is : %s ' % (other_func, lo, hi, mci.definite_integral())
+    
+    for f, lo, hi, expected in integral_tests:
+        mci = MonteCarloIntegrator(math_function=f, precision='d', lo=lo, hi=hi)
+        print 'The Monte Carlo numerical integration of the function\n \t f: x -> %s \n \t from x = %s to x = %s is :\t %s ' % (f, lo, hi, mci.definite_integral())
+        print 'Where the expected value is : %s' % expected
