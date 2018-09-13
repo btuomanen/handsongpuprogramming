@@ -140,4 +140,4 @@ if __name__ == '__main__':
     
     mci = MonteCarloIntegrator(math_function=other_func, lo=lo, hi=hi)
 
-    print 'Numerical integration of the function f: x -> %s is : %s ' % (other_func, mci.definite_integral())
+    print 'The Monte Carlo numerical integration of the function f: x -> %s from x = %s to x = %s is : %s ' % (other_func, lo, hi, mci.definite_integral())
