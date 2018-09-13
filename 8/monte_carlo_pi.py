@@ -3,7 +3,6 @@ import pycuda.driver as drv
 from pycuda import gpuarray
 from pycuda.compiler import SourceModule
 import numpy as np
-from time import time
 from sympy import Rational
 
 ker = SourceModule(no_extern_c=True ,source='''
