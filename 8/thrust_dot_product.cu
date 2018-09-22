@@ -2,8 +2,6 @@
 #include <thrust/device_vector.h>
 #include <iostream>
 
-// http://www.training.prace-ri.eu/uploads/tx_pracetmo/CUDAGC.pdf
-
 using namespace std;
 
 struct multiply_functor {
