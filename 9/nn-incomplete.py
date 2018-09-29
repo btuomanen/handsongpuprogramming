@@ -1,4 +1,3 @@
-# implementation of deep neural net using pycuda by Brian Tuomanen
 from __future__ import division
 import pycuda.autoinit
 import pycuda.driver as drv
