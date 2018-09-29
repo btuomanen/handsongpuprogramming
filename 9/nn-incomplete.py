@@ -1,15 +1,18 @@
+# implementation of deep neural net using pycuda by Brian Tuomanen
 from __future__ import division
 import pycuda.autoinit
 import pycuda.driver as drv
 from pycuda import gpuarray
 from pycuda.compiler import SourceModule
+from pycuda.elementwise import ElementwiseKernel
 import numpy as np
 
-LayerEvalSource = '''
+DenseEvalCode = '''
 #define _RELU(x) ( ((x) > 0.0f) ? (x) : 0.0f )
-#define _SIGMOID(x)  ( 1.0f / (1.0f + exp(-(x)) ))
+#define _SIGMOID(x)  ( 1.0f / (1.0f + expf(-(x)) ))
 
-__global__ void layer_eval(int num_outputs, int num_inputs, int relu, int sigmoid, float * w, float * b, \
+
+__global__ void dense_eval(int num_outputs, int num_inputs, int relu, int sigmoid, float * w, float * b, \
                            float * x, float *y, int batch_size, int w_t, int b_t, float delta)
 {
      int i = blockDim.x*blockIdx.x + threadIdx.x;
@@ -39,7 +42,7 @@ __global__ void layer_eval(int num_outputs, int num_inputs, int relu, int sigmoi
      {
          for(int k=0; k < batch_size; k++)
          {    
-              double temp = 0;
+              double temp = 0.0f;
               
               for (int j = 0; j < num_inputs; j++)
               {
@@ -73,16 +76,22 @@ __global__ void layer_eval(int num_outputs, int num_inputs, int relu, int sigmoi
 }
 '''
 
-mod = SourceModule(LayerEvalSource)
+eval_mod = SourceModule(DenseEvalCode)
 
-eval_ker = mod.get_function('layer_eval')
+eval_ker = eval_mod.get_function('dense_eval')
 
 
 class DenseLayer:
     
-    def __init__(self, num_inputs=None, num_outputs=None, weights=None, b=None, stream=None, relu=False, sigmoid=False, dropout=None, delta=0.001):
+    def __init__(self, num_inputs=None, num_outputs=None, weights=None, b=None, stream=None, \
+    relu=False, sigmoid=False, dropout=None, delta=None):
         
         self.stream = stream
+        
+        if delta is None:
+            self.delta = np.float32(0.001)
+        else:
+            self.delta = np.float32(delta)
         
         if weights is None:
             weights = np.random.rand(num_outputs, num_inputs)
@@ -99,6 +108,10 @@ class DenseLayer:
             
             self.num_inputs = np.int32(self.weights.shape[1])
             self.num_outputs = np.int32(self.weights.shape[0])
+            
+        else:
+            self.num_inputs = np.int32(num_inputs)
+            self.num_outputs = np.int32(num_outputs)
 
 
         if b is None:
@@ -116,18 +129,19 @@ class DenseLayer:
         
         self.grid = (int(np.ceil(self.num_outputs / 32)), 1,1)
         
-        self.delta = np.float32(delta)
+        
         
 
-    def eval_(self, x, y=None):
+    def eval_(self, x, y=None, batch_size=None, stream=None):
     
         if type(x) != pycuda.gpuarray.GPUArray:
             x = gpuarray.to_gpu_async(np.array(x,dtype=np.float32) , stream=self.stream)
             
-        if len(x.shape) == 2:
-            batch_size = np.int32(x.shape[0])
-        else:
-            batch_size = np.int32(1)
+        if batch_size==None:
+            if len(x.shape) == 2:
+                batch_size = np.int32(x.shape[0])
+            else:
+                batch_size = np.int32(1)
         
         
         if y is None:
@@ -135,14 +149,11 @@ class DenseLayer:
                 y = gpuarray.empty((self.num_outputs,), dtype=np.float32)
             else:
                 y = gpuarray.empty((self.num_outputs, batch_size), dtype=np.float32)
-            #y = gpuarray.empty(x.shape, dtype=np.float32)
-            
-            
-        #__global__ void layer_eval(int num_outputs, int num_inputs, int relu, int sigmoid, float * w, float * b, \
-        #    float * x, float *y, int batch_size, int w_t, int b_t, float delta)
+
+
         eval_ker(self.num_outputs, self.num_inputs, self.relu, self.sigmoid, \
-                 self.weights, self.b, x, y, batch_size, np.int32(-1), np.int32(-1), \
-                 self.delta , block=self.block, grid=self.grid , stream=self.stream)
+                 self.weights, self.b, x, y, np.int32(batch_size), np.int32(-1), np.int32(-1), \
+                 self.delta , block=self.block, grid=self.grid , stream=stream)
         
         return y
         
@@ -152,7 +163,188 @@ class DenseLayer:
         
     def eval_batch_weight():
         pass
-    
+        
+        
+DropoutCode = '''
+#include <curand_kernel.h>
+#define ULL  unsigned long long
 
-weights = [[1,2,3],[4,5,6]]
-nl = DenseLayer(weights=weights)
+// dropout layer is for training
+// use CuRAND here
+
+extern "C" {
+
+    __global__ void dropout_layer(int num, float *x, float *y, int batch_size, float prob)
+    {
+        
+        
+        int i = blockIdx.x * blockDim.x + threadIdx.x;
+        
+        if (i < num)
+        {
+            curandState cr_state;
+            
+            curand_init( (ULL)  clock(), (ULL) i, (ULL) 0, &cr_state);
+    
+    
+            for(int k =0; k < batch_size; k++)
+            {
+                if ( curand_uniform(&cr_state) <= prob)
+                    y[k*batch_size + i] = 0.0f;
+                else
+                    y[k*batch_size + i] = x[k*batch_size + i];
+            }
+        }
+    }
+
+}
+'''  
+
+dropout_mod = SourceModule(no_extern_c=True, source=DropoutCode)
+
+dropout_ker = dropout_mod.get_function('dropout_layer')
+        
+class DropoutLayer:
+    def __init__(self):
+        pass
+        
+        
+
+
+exp_ker = ElementwiseKernel("float * x, float * y", "y[i] = expf(x[i]);",  "exp_ker")
+
+SoftmaxExp='''
+__global__ void softmax_mean( int num, float *x, float *y, int batch_size)
+{
+
+    // parallelize over
+    int i = blockDim.x*blockIdx.x + threadIdx.x;
+    
+    if (i < batch_size)
+    {
+        double temp = 0.0f;
+        
+        for(int k=0; k < num; k++)
+            temp += (double) x[i*num + k];
+            
+        
+            
+        y[i] = (float) ( temp / ((double) num) );
+    
+    }
+    
+    return;
+}'''
+
+        
+class SoftmaxLayer:
+    def __init__(self):
+        pass
+        
+    
+class SequentialNetwork:
+
+    def __init__(self, layers=None, delta=None, stream = None, max_batch_size=1):
+        
+        self.network = []
+        self.network_summary = []
+        self.network_mem = []
+        
+        if stream is not None:
+            self.stream = stream
+        else:
+            self.stream = drv.Stream()
+            
+        self.delta = delta
+        self.max_batch_size=max_batch_size
+        
+        if layers is not None:
+            for layer in layers:
+                add_layer(self, layer)
+    
+    def add_layer(self, layer):
+    
+        if layer['type'] == 'dense':
+            if len(self.network) == 0:
+                num_inputs = layer['num_inputs']
+            else:
+                num_inputs = self.network_summary[-1][2]
+            
+            num_outputs = layer['num_outputs']
+            sigmoid = layer['sigmoid']
+            relu = layer['relu']
+            
+            weights = layer['weights']
+            
+            b = layer['bias']
+            
+            self.network.append(DenseLayer(num_inputs=num_inputs, num_outputs=num_outputs, sigmoid=sigmoid, relu=relu, weights=weights))
+            self.network_summary.append( ('dense', num_inputs, num_outputs))
+            
+            if self.max_batch_size > 1:
+                if len(self.network_mem) == 0:
+                    self.network_mem.append(gpuarray.empty( (self.max_batch_size, self.network_summary[-1][1] ), dtype=np.float32 ) )
+                self.network_mem.append(gpuarray.empty((self.max_batch_size, self.network_summary[-1][2] ), dtype=np.float32  ) ) 
+            else:
+                if len(self.network_mem) == 0:
+                    self.network_mem.append( gpuarray.empty( (self.network_summary[-1][1], ), dtype=np.float32 ) )
+                self.network_mem.append( gpuarray.empty((self.network_summary[-1][2], ), dtype=np.float32  ) ) 
+    
+    
+    # assuming batch_size = 1
+    def eval_(self, x, stream=None):
+        
+        if stream is None:
+            stream = self.stream
+        
+        #if(x.shape != self.network_mem)
+        if type(x) != np.ndarray:
+            temp = np.array(x, dtype = np.float32)
+            x = temp
+        
+        if(x.size == self.network_mem[0].size):
+            self.network_mem[0].set_async(x, stream=stream)
+        else:
+            
+            if x.size > self.network_mem[0].size:
+                raise Exception("Error: batch size is not large enough for input.")
+            
+            x0 = np.zeros((self.network_mem[0].size,), dtype=np.float32)
+            x0[0:x.size] = x.ravel()
+            self.network_mem[0].set_async(x0, stream=stream)
+        
+        if(len(x.shape) == 2):
+            batch_size = x.shape[0]
+        else:
+            batch_size = 1
+        
+        for i in xrange(len(self.network)):
+            
+            self.network[i].eval_(x=self.network_mem[i], y = self.network_mem[i+1], batch_size=batch_size, stream = stream)
+            
+        y = self.network_mem[-1].get_async(stream=stream)
+        
+        if batch_size > 1:
+            y = y[0:batch_size, :]
+        
+        return y
+        
+                
+                
+        
+    
+if __name__ == '__main__':
+    sn = SequentialNetwork( max_batch_size=10 )
+    sn.add_layer({'type' : 'dense', 'num_inputs' : 2, 'num_outputs' : 3, 'relu': False, 'sigmoid': False, 'weights': [[1,2],[3,4],[5,6]], 'bias' : None })
+    sn.add_layer({'type' : 'dense', 'num_inputs' : 3, 'num_outputs' : 2, 'relu': False, 'sigmoid': False, 'weights': [[1,2,3],[3,4, 5] ], 'bias' : None })
+    x = np.float32([[1,1],[1,0]])
+    y = sn.eval_(x)
+    
+    print y
+    
+    sn.add_layer({'type' : 'dense', 'num_inputs' : 2, 'num_outputs' : 2, 'relu': False, 'sigmoid': False, 'weights': [[-1,0],[0,-1] ], 'bias' : None })
+    x = np.float32([[1,1],[1,0]])
+    y = sn.eval_(x)
+
+    print y
+
