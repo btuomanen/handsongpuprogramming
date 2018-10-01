@@ -147,7 +147,7 @@ class DenseLayer:
             if batch_size == 1:
                 y = gpuarray.empty((self.num_outputs,), dtype=np.float32)
             else:
-                y = gpuarray.empty((self.num_outputs, batch_size), dtype=np.float32)
+                y = gpuarray.empty((batch_size, self.num_outputs), dtype=np.float32)
 
 
         eval_ker(self.num_outputs, self.num_inputs, self.relu, self.sigmoid, \
@@ -189,9 +189,9 @@ extern "C" {
             for(int k =0; k < batch_size; k++)
             {
                 if ( curand_uniform(&cr_state) <= prob)
-                    y[k*batch_size + i] = 0.0f;
+                    y[k*num + i] = 0.0f;
                 else
-                    y[k*batch_size + i] = x[k*batch_size + i];
+                    y[k*num + i] = x[k*num + i];
             }
         }
     }
@@ -210,9 +210,30 @@ class DropoutLayer:
         
 
 
-exp_ker = ElementwiseKernel("float * x, float * y", "y[i] = expf(x[i]);",  "exp_ker")
+#exp_ker = ElementwiseKernel("float * x, float * y", "y[i] = expf(x[i]);",  "exp_ker")
 
-SoftmaxExp='''
+# threads: at least "num"
+SoftmaxExpCode='''
+__global__ void softmax_exp( int num, float *x, float *y, int batch_size)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    if (i < num)
+    {
+        for (int k=0; k < batch_size; k++)
+        {
+            y[num*k + i] = expf(x[num*k+i]);
+        
+        }
+    }
+}
+'''
+
+exp_mod = SourceModule(SoftmaxExpCode)
+exp_ker = exp_mod.get_function('softmax_exp')
+
+# threads: at least batch size
+SoftmaxMeanCode='''
 __global__ void softmax_mean( int num, float *x, float *y, int batch_size)
 {
 
@@ -221,25 +242,57 @@ __global__ void softmax_mean( int num, float *x, float *y, int batch_size)
     
     if (i < batch_size)
     {
-        double temp = 0.0f;
+        float temp = 0.0f;
         
         for(int k=0; k < num; k++)
-            temp += (double) x[i*num + k];
+            temp += x[i*num + k];
             
         
-            
-        y[i] = (float) ( temp / ((double) num) );
+        for(int k=0; k < num; k++)
+            y[i*num+k] = x[i*num+k] / temp;
     
     }
     
     return;
 }'''
 
+mean_mod = SourceModule(SoftmaxMeanCode)
+mean_ker = mean_mod.get_function('softmax_mean')
+
         
 class SoftmaxLayer:
-    def __init__(self):
-        pass
+    def __init__(self, num=None, stream=None):
+        self.num = np.int32(num)
+        self.stream = None
         
+        
+    def eval_(self, x, y=None, batch_size=None, stream=None):
+
+        if type(x) != pycuda.gpuarray.GPUArray:
+            temp = np.array(x,dtype=np.float32)
+            x = gpuarray.to_gpu_async( temp , stream=stream)
+            
+        if batch_size==None:
+            if len(x.shape) == 2:
+                batch_size = np.int32(x.shape[0])
+            else:
+                batch_size = np.int32(1)
+        else:
+            batch_size = np.int32(batch_size)
+        
+        
+        if y is None:
+            if batch_size == 1:
+                y = gpuarray.empty((self.num,), dtype=np.float32)
+            else:
+                y = gpuarray.empty((batch_size, self.num), dtype=np.float32)
+
+                
+        exp_ker(self.num, x, y, batch_size, block=(32,1,1), grid=(int( np.ceil( self.num / 32) ), 1, 1), stream=stream)
+        
+        mean_ker(self.num, y, y, batch_size, block=(32,1,1), grid=(int( np.ceil( batch_size / 32)), 1,1), stream=stream)
+    
+        return y
     
 class SequentialNetwork:
 
@@ -277,7 +330,7 @@ class SequentialNetwork:
             
             b = layer['bias']
             
-            self.network.append(DenseLayer(num_inputs=num_inputs, num_outputs=num_outputs, sigmoid=sigmoid, relu=relu, weights=weights))
+            self.network.append(DenseLayer(num_inputs=num_inputs, num_outputs=num_outputs, sigmoid=sigmoid, relu=relu, weights=weights, b=b))
             self.network_summary.append( ('dense', num_inputs, num_outputs))
             
             if self.max_batch_size > 1:
@@ -289,6 +342,24 @@ class SequentialNetwork:
                     self.network_mem.append( gpuarray.empty( (self.network_summary[-1][1], ), dtype=np.float32 ) )
                 self.network_mem.append( gpuarray.empty((self.network_summary[-1][2], ), dtype=np.float32  ) ) 
     
+        elif layer['type'] == 'softmax':
+            
+            if len(self.network) == 0:
+                raise Exception("Error!  Need a dense layer before a softmax layer!")
+            
+            if self.network_summary[-1][0] != 'dense':
+                raise Exception("Error!  Need a dense layer before a softmax layer!")
+            
+            
+            num_inputs = self.network_summary[-1][1]
+            num_outputs = num_inputs
+            
+            self.network.append(SoftmaxLayer(num_inputs=num_inputs, num_outputs=num_outputs))
+            
+            self.network_summary.append(('softmax', num_inputs, num_outputs))
+            
+            
+            
     
     # assuming batch_size = 1
     def eval_(self, x, stream=None):
