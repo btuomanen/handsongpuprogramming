@@ -398,7 +398,7 @@ class SequentialNetwork:
             
         y = self.network_mem[-1].get_async(stream=stream)
         
-        if batch_size > 1:
+        if len(y.shape) == 2:
             y = y[0:batch_size, :]
         
         return y
