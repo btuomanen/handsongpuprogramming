@@ -345,20 +345,24 @@ class SequentialNetwork:
         elif layer['type'] == 'softmax':
             
             if len(self.network) == 0:
-                raise Exception("Error!  Need a dense layer before a softmax layer!")
+                raise Exception("Error!  Softmax layer can't be first!")
             
             if self.network_summary[-1][0] != 'dense':
                 raise Exception("Error!  Need a dense layer before a softmax layer!")
             
             
-            num_inputs = self.network_summary[-1][1]
-            num_outputs = num_inputs
+            num = self.network_summary[-1][1]
             
-            self.network.append(SoftmaxLayer(num_inputs=num_inputs, num_outputs=num_outputs))
+            self.network.append(SoftmaxLayer(num=num))
             
-            self.network_summary.append(('softmax', num_inputs, num_outputs))
+            self.network_summary.append(('softmax', num, num))
             
-            
+            if self.max_batch_size > 1:
+                self.network_mem.append(gpuarray.empty((self.max_batch_size, self.network_summary[-1][2] ), dtype=np.float32  ) ) 
+            else:
+                self.network_mem.append( gpuarray.empty((self.network_summary[-1][2], ), dtype=np.float32  ) ) 
+
+
             
     
     # assuming batch_size = 1
@@ -416,5 +420,12 @@ if __name__ == '__main__':
     x = np.float32([[1,1],[1,0]])
     y = sn.eval_(x)
 
+    print y
+    
+    sn.add_layer({'type' : 'softmax'})
+    
+    x = np.float32([[1,1],[1,0]])
+    y = sn.eval_(x)
+    
     print y
 
