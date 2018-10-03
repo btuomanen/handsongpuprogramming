@@ -6,6 +6,31 @@ from pycuda.compiler import SourceModule
 from pycuda.elementwise import ElementwiseKernel
 import numpy as np
 
+def cross_entropy(predictions=None, ground_truth=None):
+    
+    if predictions is None or ground_truth is None:
+        raise Exception("error!  Both predictions and ground truth must be float32 arrays")
+    
+    p = np.array(predictions).copy()
+    
+    y = np.array(ground_truth).copy()
+    
+    if p.shape != y.shape:
+        raise Exception("Error!  Both predictions and ground_truth must have same shape.")
+    
+    if len(p.shape) != 2:
+        raise Exception("Error!  Both predictions and ground_truth must be 2D arrays.")
+    
+    
+    
+    total_entropy = 0
+    
+    for i in range(p.shape[0]):
+        total_entropy += -np.sum(y[i,:] * np.nan_to_num( np.log(p[i,:]) ) + (1 - y[i,:]) * np.nan_to_num(np.log(1 - p[i,:])) )
+        
+    return total_entropy / p.size
+
+
 DenseEvalCode = '''
 #define _RELU(x) ( ((x) > 0.0f) ? (x) : 0.0f )
 #define _SIGMOID(x)  ( 1.0f / (1.0f + expf(-(x)) ))
@@ -66,10 +91,10 @@ __global__ void dense_eval(int num_outputs, int num_inputs, int relu, int sigmoi
           w[w_t] = old_w;
     }
      
-     if( b_t >= 0 )
-     {
-          b[b_t] = old_b;
-     }
+    if( b_t >= 0 )
+    {
+         b[b_t] = old_b;
+    }
          
     return;
 }
@@ -294,6 +319,9 @@ class SoftmaxLayer:
     
         return y
     
+
+    
+
 class SequentialNetwork:
 
     def __init__(self, layers=None, delta=None, stream = None, max_batch_size=1):
@@ -366,7 +394,7 @@ class SequentialNetwork:
             
     
     # assuming batch_size = 1
-    def eval_(self, x, stream=None):
+    def predict(self, x, stream=None):
         
         if stream is None:
             stream = self.stream
@@ -402,30 +430,39 @@ class SequentialNetwork:
             y = y[0:batch_size, :]
         
         return y
+    
+    
+    
+
+        
+        
+        
+if __name__ == '__main__':
+    cross_entropy([[1,0]],[[1,0]])
         
                 
                 
         
     
-if __name__ == '__main__':
+if __name__ == '__main_123_':
     sn = SequentialNetwork( max_batch_size=10 )
     sn.add_layer({'type' : 'dense', 'num_inputs' : 2, 'num_outputs' : 3, 'relu': False, 'sigmoid': False, 'weights': [[1,2],[3,4],[5,6]], 'bias' : None })
     sn.add_layer({'type' : 'dense', 'num_inputs' : 3, 'num_outputs' : 2, 'relu': False, 'sigmoid': False, 'weights': [[1,2,3],[3,4, 5] ], 'bias' : None })
     x = np.float32([[1,1],[1,0]])
-    y = sn.eval_(x)
+    y = sn.predict(x)
     
     print y
     
     sn.add_layer({'type' : 'dense', 'num_inputs' : 2, 'num_outputs' : 2, 'relu': False, 'sigmoid': False, 'weights': [[-1,0],[0,-1] ], 'bias' : None })
     x = np.float32([[1,1],[1,0]])
-    y = sn.eval_(x)
+    y = sn.predict(x)
 
     print y
     
     sn.add_layer({'type' : 'softmax'})
     
     x = np.float32([[1,1],[1,0]])
-    y = sn.eval_(x)
+    y = sn.predict(x)
     
     print y
 
