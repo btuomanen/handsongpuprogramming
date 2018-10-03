@@ -156,16 +156,25 @@ class DenseLayer:
         
         
 
-    def eval_(self, x, y=None, batch_size=None, stream=None):
+    def eval_(self, x, y=None, batch_size=None, stream=None, delta=None, w_t = None, b_t = None):
     
         if type(x) != pycuda.gpuarray.GPUArray:
             x = gpuarray.to_gpu_async(np.array(x,dtype=np.float32) , stream=self.stream)
             
-        if batch_size==None:
+        if batch_size is None:
             if len(x.shape) == 2:
                 batch_size = np.int32(x.shape[0])
             else:
                 batch_size = np.int32(1)
+                
+        if delta is None:
+            delta = self.delta
+            
+        if w_t is None:
+            w_t = np.int32(-1)
+            
+        if b_t is None:
+            b_t = np.int32(-1)
         
         
         if y is None:
@@ -176,8 +185,8 @@ class DenseLayer:
 
 
         eval_ker(self.num_outputs, self.num_inputs, self.relu, self.sigmoid, \
-                 self.weights, self.b, x, y, np.int32(batch_size), np.int32(-1), np.int32(-1), \
-                 self.delta , block=self.block, grid=self.grid , stream=stream)
+                 self.weights, self.b, x, y, np.int32(batch_size), w_t, b_t, \
+                 delta , block=self.block, grid=self.grid , stream=stream)
         
         return y
         
@@ -324,7 +333,7 @@ class SoftmaxLayer:
 
 class SequentialNetwork:
 
-    def __init__(self, layers=None, delta=None, stream = None, max_batch_size=1):
+    def __init__(self, layers=None, delta=None, stream = None, max_batch_size=32, max_streams=10, epochs = 10):
         
         self.network = []
         self.network_summary = []
@@ -337,6 +346,10 @@ class SequentialNetwork:
             
         self.delta = delta
         self.max_batch_size=max_batch_size
+        
+        self.max_streams = max_streams
+        
+        self.epochs = epochs
         
         if layers is not None:
             for layer in layers:
@@ -430,14 +443,82 @@ class SequentialNetwork:
             y = y[0:batch_size, :]
         
         return y
+        
+        
+    # batch stochastic gradient descent
     
+    def bsgd(self, training=None, training_rate=0.01, labels=None, delta=None, max_streams = None, epochs = None):
+        
+        
+        training = np.float32(training)
+        labels = np.float32(labels)
+        
+        if( training.shape[0] != labels.shape[0] ):
+            raise Exception("Number of training data points should be same as labels!")
+        
+
+        if max_streams is None:
+            max_streams = self.max_streams
+            
+        if epochs is None:
+            epochs = self.epochs
+            
+        if delta is None:
+            delta = self.delta
+        
+        streams = []
+        bgd_mem = []
+        
+        
+        # create the streams needed for training
+        
+        for _ in xrange(max_streams):
+            streams.append(drv.Stream())
+            bgd_mem.append([])
+            
+        
+        # allocate memory for each stream
+        
+        for i in xrange(len(bgd_mem)):
+            for mem_bank in self.network_mem:
+                bgd_mem[i].append( gpuarray.empty_like(mem_bank) )
+        
+        
+        # begin training!
+        
+        num_points = training.shape[0]
+        batch_size = self.max_batch_size
+        
+        for k in xrange(epochs):    
+            
+            print '-----------------------------------------------------------'
+            print 'Starting training epoch: %s' % k
+            print 'Batch size: %s , Total number of training samples: %s' % (batch_size, num_points)
+            print '-----------------------------------------------------------'
+            
+            
+            for i in xrange( int(np.ceil(training.shape[0] / batch_size)) ):
+            
+                batch_index = np.random.choice(num_points, batch_size, replace=False)
+                
+                batch_training = training[batch_index, :]
+                batch_labels = labels[batch_index, :]
+                
+                batch_predictions = self.predict(batch_training)
+        
+                cur_entropy = cross_entropy(predictions=batch_predictions, ground_truth=batch_labels)
+                
+                # need to iterate over each weight / bias , check entropy
+                
+        
+        
     
     
 
         
         
         
-if __name__ == '__main__':
+if __name__ == '__main_343424_':
     cross_entropy([[1,0]],[[1,0]])
         
                 
