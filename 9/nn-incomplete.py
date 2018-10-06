@@ -5,6 +5,7 @@ from pycuda import gpuarray
 from pycuda.compiler import SourceModule
 from pycuda.elementwise import ElementwiseKernel
 import numpy as np
+from Queue import Queue
 
 def cross_entropy(predictions=None, ground_truth=None):
     
@@ -44,18 +45,18 @@ __global__ void dense_eval(int num_outputs, int num_inputs, int relu, int sigmoi
      float old_w, old_b;
      
 
-     if( w_t >= 0 )
+     /*if( w_t >= 0 )
      {
           old_w = w[w_t];
           w[w_t] += delta;
-     }
+     }*/
      
      
-     if( b_t >= 0 )
+     /*if( b_t >= 0 )
      {
           old_b = b[b_t];
           b[b_t] += delta;
-     }
+     }*/
      
      
      if(batch_size <= 0)
@@ -86,14 +87,24 @@ __global__ void dense_eval(int num_outputs, int num_inputs, int relu, int sigmoi
          }
     }
          
-    if( w_t >= 0 )
+            
+            // modify this here
+    if( w_t >= 0 && i == (w_t % num_outputs))
     {
-          w[w_t] = old_w;
+          int j = w_t % num_inputs;
+          
+          for(int k=0; k < batch_size; k++)
+              y[k*num_outputs + i] += delta*x[k*num_inputs+j];
+              
+          
     }
      
-    if( b_t >= 0 )
+    if( b_t >= 0 && i == b_t )
     {
-         b[b_t] = old_b;
+          int j = b_t % num_inputs;
+          
+          for(int k=0; k < batch_size; k++)
+              y[k*num_outputs + i] += b_t; // delta*x[k*num_inputs+j];
     }
          
     return;
@@ -422,11 +433,11 @@ class SequentialNetwork:
         else:
             
             if x.size > self.network_mem[0].size:
-                raise Exception("Error: batch size is not large enough for input.")
+                raise Exception("Error: batch size too large for input.")
             
             x0 = np.zeros((self.network_mem[0].size,), dtype=np.float32)
             x0[0:x.size] = x.ravel()
-            self.network_mem[0].set_async(x0, stream=stream)
+            self.network_mem[0].set_async(x0.reshape(self.network_mem[0].shape), stream=stream)
         
         if(len(x.shape) == 2):
             batch_size = x.shape[0]
@@ -443,11 +454,30 @@ class SequentialNetwork:
             y = y[0:batch_size, :]
         
         return y
+    
+    
+    
+    # w_t :  weight to check
+    #  (bank, weight)
+    # b_t : bias to check
+    # (bank, bias)
+    
+    def partial_predict(self, layer_index=None, w_t=None, b_t=None, partial_mem=None, stream=None, batch_size=None):
         
+        self.network[layer_index].eval_(x=self.network_mem[layer_index], y = partial_mem[layer_index+1], batch_size=batch_size, stream = stream, w_t=w_t, b_t=b_t)
+        
+        for i in xrange(layer_index+1, len(self.network)):
+            self.network[i].eval_(x=partial_mem[i], y =partial_mem[i+1], batch_size=batch_size, stream = stream)
+            
+        #y = partial_mem[-1]
+        
+        #return y
+            
+            
         
     # batch stochastic gradient descent
     
-    def bsgd(self, training=None, training_rate=0.01, labels=None, delta=None, max_streams = None, epochs = None):
+    def bsgd(self, training=None, training_rate=0.01, labels=None, delta=None, max_streams = None, epochs = 1):
         
         
         training = np.float32(training)
@@ -496,8 +526,9 @@ class SequentialNetwork:
             print 'Batch size: %s , Total number of training samples: %s' % (batch_size, num_points)
             print '-----------------------------------------------------------'
             
+            all_grad = []
             
-            for i in xrange( int(np.ceil(training.shape[0] / batch_size)) ):
+            for _ in xrange( int(np.ceil(training.shape[0] / batch_size)) ):
             
                 batch_index = np.random.choice(num_points, batch_size, replace=False)
                 
@@ -509,11 +540,77 @@ class SequentialNetwork:
                 cur_entropy = cross_entropy(predictions=batch_predictions, ground_truth=batch_labels)
                 
                 # need to iterate over each weight / bias , check entropy
+                # def partial_predict(self, layer_index=None, w_t=None, b_t=None, partial_mem=None, stream=None, batch_size=None):
                 
-        
-        
-    
-    
+                
+                
+                
+                for i in xrange(len(self.network)):
+                    
+                    if self.network_summary[0] != 'dense':
+                        continue
+                    
+                    all_weights = Queue()
+                    
+                    grad_w = np.zeros((self.network[i].weights.size,), dtype=np.float32)
+                    grad_b = np.zeros((self.network[i].b.size,), dtype=np.float32)
+                    
+                    for w in xrange( self.network[i].weights.size ):
+                        all_weights.put( ('w', w ) )
+                        
+                    for b in xrange( self.network[i].b.size ):
+                        all_weights.put(('b', b))
+                        
+                    while not all_weights.empty():
+                        
+                        stream_weights = Queue()
+                        
+                        for j in xrange(max_streams):
+                            
+                            if all_weights.empty():
+                                break
+                            
+                            wb = all_weights.get()
+                            
+                            if wb[0] == 'w':
+                                w_t = wb[1]
+                                b_t = None
+                            elif wb[0] == 'b':
+                                b_t = wb[1]
+                                w_t = None
+                            
+                            stream_weights.put( wb )
+                            
+                            self.partial_predict(layer_index=i, w_t=w_t, b_t=b_t, partial_mem=bgd_mem[j], stream=streams[j], batch_size=self.batch_size)
+                            
+                        for j in xrange(max_streams):
+                            
+                            if stream_weights.empty():
+                                break
+                            
+                            wb = stream_weights.get()
+                            
+                            w_predictions = bgd_mem[j][-1].get_async(stream=streams[j])
+                            
+                            w_entropy = cross_entropy(predictions=w_predictions, ground_truth=batch_labels)
+                            
+                            
+                            
+                            if wb[0] == 'w':
+                                w_t = wb[1]
+                                # subtract entropy, divide by delta
+                                grad_w[w_t] = (cur_entropy - w_entropy) / delta
+                                
+                            elif wb[0] == 'b':
+                                b_t = wb[1]
+                                grad_b[b_t] = (cur_entropy - w_entropy) / delta
+                        
+                    all_grad.append(grad_w)
+                    all_grad.append(grad_b)
+                        
+                        
+                            
+                            
 
         
         
@@ -525,7 +622,7 @@ if __name__ == '__main_343424_':
                 
         
     
-if __name__ == '__main_123_':
+if __name__ == '__main__':
     sn = SequentialNetwork( max_batch_size=10 )
     sn.add_layer({'type' : 'dense', 'num_inputs' : 2, 'num_outputs' : 3, 'relu': False, 'sigmoid': False, 'weights': [[1,2],[3,4],[5,6]], 'bias' : None })
     sn.add_layer({'type' : 'dense', 'num_inputs' : 3, 'num_outputs' : 2, 'relu': False, 'sigmoid': False, 'weights': [[1,2,3],[3,4, 5] ], 'bias' : None })
