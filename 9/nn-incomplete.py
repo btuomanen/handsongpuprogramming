@@ -7,7 +7,7 @@ from pycuda.elementwise import ElementwiseKernel
 import numpy as np
 from Queue import Queue
 
-MAX_ENTROPY = 10
+MAX_ENTROPY = 100
 
 def cross_entropy(predictions=None, ground_truth=None):
     
@@ -94,10 +94,10 @@ __global__ void dense_eval(int num_outputs, int num_inputs, int relu, int sigmoi
      
     if( b_t >= 0 && i == b_t )
     {
-          int j = b_t % num_inputs;
+          //int j = b_t % num_inputs;
           
           for(int k=0; k < batch_size; k++)
-              y[k*num_outputs + i] += b_t; // delta*x[k*num_inputs+j];
+              y[k*num_outputs + i] += delta; // delta*x[k*num_inputs+j];
     }
          
     return;
@@ -173,6 +173,8 @@ class DenseLayer:
                 
         if delta is None:
             delta = self.delta
+            
+        delta = np.float32(delta)
             
         if w_t is None:
             w_t = np.int32(-1)
@@ -400,7 +402,7 @@ class SequentialNetwork:
                 raise Exception("Error!  Need a dense layer before a softmax layer!")
             
             
-            num = self.network_summary[-1][1]
+            num = self.network_summary[-1][2]
             
             self.network.append(SoftmaxLayer(num=num))
             
@@ -459,9 +461,9 @@ class SequentialNetwork:
     # b_t : bias to check
     # (bank, bias)
     
-    def partial_predict(self, layer_index=None, w_t=None, b_t=None, partial_mem=None, stream=None, batch_size=None):
+    def partial_predict(self, layer_index=None, w_t=None, b_t=None, partial_mem=None, stream=None, batch_size=None, delta=None):
         
-        self.network[layer_index].eval_(x=self.network_mem[layer_index], y = partial_mem[layer_index+1], batch_size=batch_size, stream = stream, w_t=w_t, b_t=b_t)
+        self.network[layer_index].eval_(x=self.network_mem[layer_index], y = partial_mem[layer_index+1], batch_size=batch_size, stream = stream, w_t=w_t, b_t=b_t, delta=delta)
         
         for i in xrange(layer_index+1, len(self.network)):
             self.network[i].eval_(x=partial_mem[i], y =partial_mem[i+1], batch_size=batch_size, stream = stream)
@@ -581,7 +583,7 @@ class SequentialNetwork:
                             
                             stream_weights.put( wb )
                             
-                            self.partial_predict(layer_index=i, w_t=w_t, b_t=b_t, partial_mem=bgd_mem[j], stream=streams[j], batch_size=batch_size)
+                            self.partial_predict(layer_index=i, w_t=w_t, b_t=b_t, partial_mem=bgd_mem[j], stream=streams[j], batch_size=batch_size, delta=delta)
                             
                         for j in xrange(max_streams):
                             
@@ -642,14 +644,14 @@ if __name__ == '__main_343424_':
     
 if __name__ == '__main__':
     sn = SequentialNetwork( max_batch_size=10 )
-    sn.add_layer({'type' : 'dense', 'num_inputs' : 2, 'num_outputs' : 3, 'relu': True, 'sigmoid': False, 'weights' : None, 'bias' : None} ) #[[1,2],[3,4],[5,6]], 'bias' : None })
-    sn.add_layer({'type' : 'dense', 'num_inputs' : 3, 'num_outputs' : 2, 'relu': True, 'sigmoid': False, 'weights': None, 'bias' : None} )  #[[1,2,3],[3,4, 5] ], 'bias' : None })
+    sn.add_layer({'type' : 'dense', 'num_inputs' : 2, 'num_outputs' : 6, 'relu': True, 'sigmoid': False, 'weights' : None, 'bias' : None} ) #[[1,2],[3,4],[5,6]], 'bias' : None })
+    sn.add_layer({'type' : 'dense', 'num_inputs' : 6, 'num_outputs' : 4, 'relu': True, 'sigmoid': False, 'weights': None, 'bias' : None} )  #[[1,2,3],[3,4, 5] ], 'bias' : None })
     x = np.float32([[1,1],[1,0]])
     y = sn.predict(x)
     
     #print y
     
-    sn.add_layer({'type' : 'dense', 'num_inputs' : 2, 'num_outputs' : 2, 'relu': True, 'sigmoid': False, 'weights': None , 'bias': None } )  # [[-1,0],[0,-1] ], 'bias' : None })
+    sn.add_layer({'type' : 'dense', 'num_inputs' : 4, 'num_outputs' : 2, 'relu': True, 'sigmoid': False, 'weights': None , 'bias': None } )  # [[-1,0],[0,-1] ], 'bias' : None })
     x = np.float32([[1,1],[1,0]])
     y = sn.predict(x)
 
@@ -657,7 +659,7 @@ if __name__ == '__main__':
     
     
     
-    sn.add_layer({'type' : 'softmax'})
+    #sn.add_layer({'type' : 'softmax'})
     
     
     
@@ -668,5 +670,5 @@ if __name__ == '__main__':
     
     #print y
     
-    sn.bsgd(training=[[1,0],[0,1],[.5,.5] ], labels=[[1,0],[0,1], [1,0] ], batch_size=3, max_streams=2, epochs=100 )
+    sn.bsgd(training=[[1,0],[0,1],[0,0] ], labels=[[1,0],[0,1], [0,0] ], batch_size=3, max_streams=2, epochs=1000 , delta=0.01, training_rate=0.01)
 
