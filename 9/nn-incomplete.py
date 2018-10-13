@@ -7,6 +7,8 @@ from pycuda.elementwise import ElementwiseKernel
 import numpy as np
 from Queue import Queue
 
+MAX_ENTROPY = 10
+
 def cross_entropy(predictions=None, ground_truth=None):
     
     if predictions is None or ground_truth is None:
@@ -27,7 +29,17 @@ def cross_entropy(predictions=None, ground_truth=None):
     total_entropy = 0
     
     for i in range(p.shape[0]):
-        total_entropy += -np.sum(y[i,:] * np.nan_to_num( np.log(p[i,:]) ) + (1 - y[i,:]) * np.nan_to_num(np.log(1 - p[i,:])) )
+        for j in range(p.shape[1]):
+            
+            if y[i,j] == 1:
+            
+                total_entropy += min( np.abs( np.nan_to_num(  np.log( p[i,j] ) ) ) , MAX_ENTROPY)
+                
+            else:
+                
+                total_entropy += min( np.abs( np.nan_to_num( np.log( 1 - p[i,j] ) ) ), MAX_ENTROPY)
+            
+        #total_entropy += -np.sum(y[i,:] * np.nan_to_num( np.log(p[i,:]) ) + (1 - y[i,:]) * np.nan_to_num(np.log(1 - p[i,:])) )
         
     return total_entropy / p.size
 
@@ -41,26 +53,7 @@ __global__ void dense_eval(int num_outputs, int num_inputs, int relu, int sigmoi
                            float * x, float *y, int batch_size, int w_t, int b_t, float delta)
 {
      int i = blockDim.x*blockIdx.x + threadIdx.x;
-     
-     float old_w, old_b;
-     
 
-     /*if( w_t >= 0 )
-     {
-          old_w = w[w_t];
-          w[w_t] += delta;
-     }*/
-     
-     
-     /*if( b_t >= 0 )
-     {
-          old_b = b[b_t];
-          b[b_t] += delta;
-     }*/
-     
-     
-     if(batch_size <= 0)
-         batch_size = 1;
      
         
      if (i < num_outputs)
@@ -71,7 +64,7 @@ __global__ void dense_eval(int num_outputs, int num_inputs, int relu, int sigmoi
               
               for (int j = 0; j < num_inputs; j++)
               {
-                  temp += ((double) w[ (num_inputs) * i + j ] ) * ( (double) x[k * num_inputs + j]);  // 
+                  temp += ((double) w[ (num_inputs) * i + j ] ) * ( (double) x[k * num_inputs + j]);
               }
                   
               temp += (double) b[i];
@@ -355,6 +348,10 @@ class SequentialNetwork:
         else:
             self.stream = drv.Stream()
             
+            
+        if delta is None:
+            delta = 0.001
+            
         self.delta = delta
         self.max_batch_size=max_batch_size
         
@@ -477,8 +474,9 @@ class SequentialNetwork:
         
     # batch stochastic gradient descent
     
-    def bsgd(self, training=None, training_rate=0.01, labels=None, delta=None, max_streams = None, epochs = 1):
+    def bsgd(self, training=None, training_rate=0.01, labels=None, delta=None, max_streams = None, batch_size = None, epochs = 1):
         
+        training_rate = np.float32(training_rate)
         
         training = np.float32(training)
         labels = np.float32(labels)
@@ -517,7 +515,9 @@ class SequentialNetwork:
         # begin training!
         
         num_points = training.shape[0]
-        batch_size = self.max_batch_size
+        
+        if batch_size is None:
+            batch_size = self.max_batch_size
         
         for k in xrange(epochs):    
             
@@ -547,7 +547,7 @@ class SequentialNetwork:
                 
                 for i in xrange(len(self.network)):
                     
-                    if self.network_summary[0] != 'dense':
+                    if self.network_summary[i][0] != 'dense':
                         continue
                     
                     all_weights = Queue()
@@ -556,10 +556,10 @@ class SequentialNetwork:
                     grad_b = np.zeros((self.network[i].b.size,), dtype=np.float32)
                     
                     for w in xrange( self.network[i].weights.size ):
-                        all_weights.put( ('w', w ) )
+                        all_weights.put( ('w', np.int32(w) ) )
                         
                     for b in xrange( self.network[i].b.size ):
-                        all_weights.put(('b', b))
+                        all_weights.put(('b', np.int32(b) ) )
                         
                     while not all_weights.empty():
                         
@@ -581,7 +581,7 @@ class SequentialNetwork:
                             
                             stream_weights.put( wb )
                             
-                            self.partial_predict(layer_index=i, w_t=w_t, b_t=b_t, partial_mem=bgd_mem[j], stream=streams[j], batch_size=self.batch_size)
+                            self.partial_predict(layer_index=i, w_t=w_t, b_t=b_t, partial_mem=bgd_mem[j], stream=streams[j], batch_size=batch_size)
                             
                         for j in xrange(max_streams):
                             
@@ -592,21 +592,39 @@ class SequentialNetwork:
                             
                             w_predictions = bgd_mem[j][-1].get_async(stream=streams[j])
                             
-                            w_entropy = cross_entropy(predictions=w_predictions, ground_truth=batch_labels)
+                            w_entropy = cross_entropy(predictions=w_predictions[:batch_size,:], ground_truth=batch_labels)
                             
                             
                             
                             if wb[0] == 'w':
                                 w_t = wb[1]
                                 # subtract entropy, divide by delta
-                                grad_w[w_t] = (cur_entropy - w_entropy) / delta
+                                grad_w[w_t] = -(cur_entropy - w_entropy) / delta
                                 
                             elif wb[0] == 'b':
                                 b_t = wb[1]
-                                grad_b[b_t] = (cur_entropy - w_entropy) / delta
+                                grad_b[b_t] = -(cur_entropy - w_entropy) / delta
                         
-                    all_grad.append(grad_w)
-                    all_grad.append(grad_b)
+                    all_grad.append([np.reshape(grad_w,self.network[i].weights.shape) , grad_b])
+            
+            for i in xrange(len(self.network)):
+                
+                if self.network_summary[i][0] == 'dense':
+                
+                    new_weights = self.network[i].weights.get()
+                    
+                    new_weights += training_rate*all_grad[i][0]
+                    
+                    new_bias = self.network[i].b.get()
+                    
+                    new_bias += training_rate*all_grad[i][1]
+                    
+                    self.network[i].weights.set(new_weights)
+                    
+                    self.network[i].b.set(new_bias)
+                    
+            
+            
                         
                         
                             
@@ -624,23 +642,31 @@ if __name__ == '__main_343424_':
     
 if __name__ == '__main__':
     sn = SequentialNetwork( max_batch_size=10 )
-    sn.add_layer({'type' : 'dense', 'num_inputs' : 2, 'num_outputs' : 3, 'relu': False, 'sigmoid': False, 'weights': [[1,2],[3,4],[5,6]], 'bias' : None })
-    sn.add_layer({'type' : 'dense', 'num_inputs' : 3, 'num_outputs' : 2, 'relu': False, 'sigmoid': False, 'weights': [[1,2,3],[3,4, 5] ], 'bias' : None })
+    sn.add_layer({'type' : 'dense', 'num_inputs' : 2, 'num_outputs' : 3, 'relu': True, 'sigmoid': False, 'weights' : None, 'bias' : None} ) #[[1,2],[3,4],[5,6]], 'bias' : None })
+    sn.add_layer({'type' : 'dense', 'num_inputs' : 3, 'num_outputs' : 2, 'relu': True, 'sigmoid': False, 'weights': None, 'bias' : None} )  #[[1,2,3],[3,4, 5] ], 'bias' : None })
     x = np.float32([[1,1],[1,0]])
     y = sn.predict(x)
     
-    print y
+    #print y
     
-    sn.add_layer({'type' : 'dense', 'num_inputs' : 2, 'num_outputs' : 2, 'relu': False, 'sigmoid': False, 'weights': [[-1,0],[0,-1] ], 'bias' : None })
+    sn.add_layer({'type' : 'dense', 'num_inputs' : 2, 'num_outputs' : 2, 'relu': True, 'sigmoid': False, 'weights': None , 'bias': None } )  # [[-1,0],[0,-1] ], 'bias' : None })
     x = np.float32([[1,1],[1,0]])
     y = sn.predict(x)
 
-    print y
+    #print y
+    
+    
     
     sn.add_layer({'type' : 'softmax'})
+    
+    
+    
+    
     
     x = np.float32([[1,1],[1,0]])
     y = sn.predict(x)
     
-    print y
+    #print y
+    
+    sn.bsgd(training=[[1,0],[0,1],[.5,.5] ], labels=[[1,0],[0,1], [1,0] ], batch_size=3, max_streams=2, epochs=100 )
 
