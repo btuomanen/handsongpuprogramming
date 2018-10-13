@@ -653,10 +653,10 @@ if __name__ == '__main_343424_':
 if __name__ == '__main__':
     sn = SequentialNetwork( max_batch_size=10 )
     sn.add_layer({'type' : 'dense', 'num_inputs' : 2, 'num_outputs' : 6, 'relu': True, 'sigmoid': False, 'weights' : None, 'bias' : None} ) #[[1,2],[3,4],[5,6]], 'bias' : None })
-    sn.add_layer({'type' : 'dense', 'num_inputs' : 6, 'num_outputs' : 4, 'relu': True, 'sigmoid': False, 'weights': None, 'bias' : None} )  #[[1,2,3],[3,4, 5] ], 'bias' : None })
+    sn.add_layer({'type' : 'dense', 'num_inputs' : 6, 'num_outputs' : 10, 'relu': True, 'sigmoid': False, 'weights': None, 'bias' : None} )  #[[1,2,3],[3,4, 5] ], 'bias' : None })
    
     
-    sn.add_layer({'type' : 'dense', 'num_inputs' : 4, 'num_outputs' : 2, 'relu': True, 'sigmoid': False, 'weights': None , 'bias': None } )  # [[-1,0],[0,-1] ], 'bias' : None })
+    sn.add_layer({'type' : 'dense', 'num_inputs' : 10, 'num_outputs' : 2, 'relu': True, 'sigmoid': False, 'weights': None , 'bias': None } )  # [[-1,0],[0,-1] ], 'bias' : None })
     x = np.float32([[1,1],[1,0]])
     y = sn.predict(x)
 
@@ -675,5 +675,5 @@ if __name__ == '__main__':
     
     #print y
     
-    sn.bsgd(training=[[1,0],[0,1],[0,0] ], labels=[[1,0],[0,1], [0,1] ], batch_size=3, max_streams=2, epochs=200 , delta=0.01, training_rate=.1)
+    sn.bsgd(training=[[1,0],[0,1],[0,0] ], labels=[[1,0],[0,1], [0,1] ], batch_size=3, max_streams=2, epochs=100 , delta=0.001, training_rate=.1)
 
