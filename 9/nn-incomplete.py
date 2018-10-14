@@ -35,16 +35,16 @@ def cross_entropy(predictions=None, ground_truth=None):
             
                 total_entropy += min( np.abs( np.nan_to_num(  np.log( p[i,j] ) ) ) , MAX_ENTROPY)
                 
-            elif y[i,j] == 0:
+            else:
                 
                 total_entropy += min( np.abs( np.nan_to_num( np.log( 1 - p[i,j] ) ) ), MAX_ENTROPY)
                 
-            else:
-                temp = 0
-                temp += min( np.abs( np.nan_to_num( ( 1 - p[i,j]) * (1 -np.log( 1 - p[i,j] ) ) ) ), MAX_ENTROPY/2)
-                temp += min( np.abs( np.nan_to_num( p[i,j] * (np.log( p[i,j] ) ) ) ), MAX_ENTROPY/2)    
+            #else:
+            #    temp = 0
+            #    temp += min( np.abs( np.nan_to_num( ( 1 - y[i,j]) * (1 -np.log( 1 - p[i,j] ) ) ) ), MAX_ENTROPY/2)
+            #    temp += min( np.abs( np.nan_to_num( y[i,j] * (np.log( p[i,j] ) ) ) ), MAX_ENTROPY/2)    
             
-                total_entropy += temp
+            #    total_entropy += temp
         #total_entropy += -np.sum(y[i,:] * np.nan_to_num( np.log(p[i,:]) ) + (1 - y[i,:]) * np.nan_to_num(np.log(1 - p[i,:])) )
         
     return total_entropy / p.size
@@ -75,11 +75,7 @@ __global__ void dense_eval(int num_outputs, int num_inputs, int relu, int sigmoi
                   
               temp += (double) b[i];
               
-              if (relu > 0)
-                  temp = _RELU(temp);
-                  
-              if (sigmoid > 0)
-                  temp = _SIGMOID(temp);
+              
               
               
               y[k * num_outputs + i] = (float) temp;                 
@@ -105,6 +101,31 @@ __global__ void dense_eval(int num_outputs, int num_inputs, int relu, int sigmoi
           for(int k=0; k < batch_size; k++)
               y[k*num_outputs + i] += delta; // delta*x[k*num_inputs+j];
     }
+    
+    
+    
+    if (i < num_outputs)
+     {
+         for(int k=0; k < batch_size; k++)
+         {    
+              float temp = y[k * num_outputs + i];
+              
+              if (relu > 0)
+                  temp = _RELU(temp);
+                  
+              if (sigmoid > 0)
+                  temp = _SIGMOID(temp);
+              
+              
+              
+              
+              y[k * num_outputs + i] = temp;                 
+         }
+    }
+    
+    
+    
+    
          
     return;
 }
@@ -653,10 +674,10 @@ if __name__ == '__main_343424_':
 if __name__ == '__main__':
     sn = SequentialNetwork( max_batch_size=10 )
     sn.add_layer({'type' : 'dense', 'num_inputs' : 2, 'num_outputs' : 6, 'relu': True, 'sigmoid': False, 'weights' : None, 'bias' : None} ) #[[1,2],[3,4],[5,6]], 'bias' : None })
-    sn.add_layer({'type' : 'dense', 'num_inputs' : 6, 'num_outputs' : 10, 'relu': True, 'sigmoid': False, 'weights': None, 'bias' : None} )  #[[1,2,3],[3,4, 5] ], 'bias' : None })
+    sn.add_layer({'type' : 'dense', 'num_inputs' : 6, 'num_outputs' : 10, 'relu': False, 'sigmoid': False, 'weights': None, 'bias' : None} )  #[[1,2,3],[3,4, 5] ], 'bias' : None })
    
     
-    sn.add_layer({'type' : 'dense', 'num_inputs' : 10, 'num_outputs' : 2, 'relu': True, 'sigmoid': False, 'weights': None , 'bias': None } )  # [[-1,0],[0,-1] ], 'bias' : None })
+    sn.add_layer({'type' : 'dense', 'num_inputs' : 10, 'num_outputs' : 2, 'relu': False, 'sigmoid': True, 'weights': None , 'bias': None } )  # [[-1,0],[0,-1] ], 'bias' : None })
     x = np.float32([[1,1],[1,0]])
     y = sn.predict(x)
 
@@ -664,7 +685,7 @@ if __name__ == '__main__':
     
     
     
-    sn.add_layer({'type' : 'softmax'})
+    #sn.add_layer({'type' : 'softmax'})
     
     
     
@@ -675,5 +696,5 @@ if __name__ == '__main__':
     
     #print y
     
-    sn.bsgd(training=[[1,0],[0,1],[0,0] ], labels=[[1,0],[0,1], [0,1] ], batch_size=3, max_streams=2, epochs=100 , delta=0.001, training_rate=.1)
+    sn.bsgd(training=[[1,0],[0,1],[0,0] ], labels=[[1,0],[0,1], [1,1] ], batch_size=3, max_streams=2, epochs=200 , delta=0.01, training_rate=.1)
 
