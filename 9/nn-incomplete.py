@@ -6,8 +6,11 @@ from pycuda.compiler import SourceModule
 from pycuda.elementwise import ElementwiseKernel
 import numpy as np
 from Queue import Queue
+import csv
 
-MAX_ENTROPY = 10
+from time import time
+
+MAX_ENTROPY = 1
 
 def cross_entropy(predictions=None, ground_truth=None):
     
@@ -103,25 +106,25 @@ __global__ void dense_eval(int num_outputs, int num_inputs, int relu, int sigmoi
     }
     
     
-    
-    if (i < num_outputs)
-     {
-         for(int k=0; k < batch_size; k++)
-         {    
-              float temp = y[k * num_outputs + i];
-              
-              if (relu > 0)
-                  temp = _RELU(temp);
+    if(relu > 0 || sigmoid > 0)
+        if (i < num_outputs)
+         {
+             for(int k=0; k < batch_size; k++)
+             {    
+                  float temp = y[k * num_outputs + i];
                   
-              if (sigmoid > 0)
-                  temp = _SIGMOID(temp);
-              
-              
-              
-              
-              y[k * num_outputs + i] = temp;                 
-         }
-    }
+                  if (relu > 0)
+                      temp = _RELU(temp);
+                      
+                  if (sigmoid > 0)
+                      temp = _SIGMOID(temp);
+                  
+                  
+                  
+                  
+                  y[k * num_outputs + i] = temp;                 
+             }
+        }
     
     
     
@@ -500,7 +503,7 @@ class SequentialNetwork:
         #return y
             
             
-        
+    #def test(self, testing=None, labels=None):
     # batch stochastic gradient descent
     
     def bsgd(self, training=None, training_rate=0.01, labels=None, delta=None, max_streams = None, batch_size = None, epochs = 1):
@@ -654,9 +657,22 @@ class SequentialNetwork:
                     
                     self.network[i].b.set(new_bias)
                     
+    
             
             
-                        
+def condition_data(data, means=None, stds=None):
+    
+    if means is None:
+        means = np.mean(data, axis=0)
+        
+    if stds is None:
+        stds = np.std(data, axis = 0)
+        
+    conditioned_data = data.copy()
+    conditioned_data -= means
+    conditioned_data /= stds
+    
+    return (conditioned_data, means, stds)
                         
                             
                             
@@ -671,21 +687,14 @@ if __name__ == '__main_343424_':
                 
         
     
-if __name__ == '__main__':
+if __name__ == '__main_231314123_':
     sn = SequentialNetwork( max_batch_size=10 )
-    sn.add_layer({'type' : 'dense', 'num_inputs' : 2, 'num_outputs' : 6, 'relu': True, 'sigmoid': False, 'weights' : None, 'bias' : None} ) #[[1,2],[3,4],[5,6]], 'bias' : None })
-    sn.add_layer({'type' : 'dense', 'num_inputs' : 6, 'num_outputs' : 10, 'relu': False, 'sigmoid': False, 'weights': None, 'bias' : None} )  #[[1,2,3],[3,4, 5] ], 'bias' : None })
+    sn.add_layer({'type' : 'dense', 'num_inputs' : 4, 'num_outputs' : 8, 'relu': True, 'sigmoid': False, 'weights' : None, 'bias' : None} ) #[[1,2],[3,4],[5,6]], 'bias' : None })
+    sn.add_layer({'type' : 'dense', 'num_inputs' : 8, 'num_outputs' : 10, 'relu': True, 'sigmoid': False, 'weights': None, 'bias' : None} )  #[[1,2,3],[3,4, 5] ], 'bias' : None })
    
     
-    sn.add_layer({'type' : 'dense', 'num_inputs' : 10, 'num_outputs' : 2, 'relu': False, 'sigmoid': True, 'weights': None , 'bias': None } )  # [[-1,0],[0,-1] ], 'bias' : None })
-    x = np.float32([[1,1],[1,0]])
-    y = sn.predict(x)
-
-    #print y
-    
-    
-    
-    #sn.add_layer({'type' : 'softmax'})
+    sn.add_layer({'type' : 'dense', 'num_inputs' : 10, 'num_outputs' : 3, 'relu': True, 'sigmoid': False, 'weights': None , 'bias': None } )  # [[-1,0],[0,-1] ], 'bias' : None })    
+    sn.add_layer({'type' : 'softmax'})
     
     
     
@@ -696,5 +705,81 @@ if __name__ == '__main__':
     
     #print y
     
-    sn.bsgd(training=[[1,0],[0,1],[0,0] ], labels=[[1,0],[0,1], [1,1] ], batch_size=3, max_streams=2, epochs=200 , delta=0.01, training_rate=.1)
-
+    t1 = time()
+    sn.bsgd(training=[[1,0],[0,1],[0,0] ], labels=[[1,0],[0,1], [0,1] ], batch_size=3, max_streams=10, epochs=100 , delta=0.01, training_rate=.1)
+    total_time = time() - t1
+    
+    print 'time: %s' % total_time
+    
+    
+if __name__ == '__main__':
+     to_class = { 'Iris-setosa' : [1,0,0] , 'Iris-versicolor' : [0,1,0], 'Iris-virginica' : [0,0,1]}
+     
+     iris_data = []
+     iris_labels = []
+     
+     with open('c:/users/btuom/examples/9/iris.data', 'rb') as csvfile:
+         csvreader = csv.reader(csvfile, delimiter=',')
+         for row in csvreader:
+             newrow = []
+             if len(row) != 5:
+                 break
+             for i in range(4):
+                 newrow.append(row[i])
+             iris_data.append(newrow)
+             iris_labels.append(to_class[row[4]])
+     iris_len = len(iris_data)
+     shuffled_index = list(range(iris_len))
+     np.random.shuffle(shuffled_index)
+     
+     
+     iris_data = np.float32(iris_data)
+     iris_labels = np.float32(iris_labels)
+     iris_data = iris_data[shuffled_index, :]
+     iris_labels = iris_labels[shuffled_index]
+     
+     test_len = iris_len // 2
+     
+     iris_train = iris_data[:test_len, :]
+     label_train = iris_labels[:test_len, :]
+     
+     iris_test = iris_data[test_len:,:]
+     label_test = iris_labels[test_len:, :]
+     
+     
+     sn = SequentialNetwork( max_batch_size=32 )
+     # this gives 60% accuracy
+#     sn.add_layer({'type' : 'dense', 'num_inputs' : 4, 'num_outputs' : 8, 'relu': True, 'sigmoid': False, 'weights' : None, 'bias' : None} ) #[[1,2],[3,4],[5,6]], 'bias' : None })
+#     sn.add_layer({'type' : 'dense', 'num_inputs' : 8, 'num_outputs' : 10, 'relu': True, 'sigmoid': False, 'weights': None, 'bias' : None} )  #[[1,2,3],[3,4, 5] ], 'bias' : None })
+#     
+#     sn.add_layer({'type' : 'dense', 'num_inputs' : 10, 'num_outputs' : 3, 'relu': True, 'sigmoid': False, 'weights': None , 'bias': None } )  # [[-1,0],[0,-1] ], 'bias' : None })    
+#     sn.add_layer({'type' : 'softmax'})
+     
+     # this classifies 85.3% correct!
+     sn.add_layer({'type' : 'dense', 'num_inputs' : 4, 'num_outputs' : 10, 'relu': True, 'sigmoid': False, 'weights' : None, 'bias' : None} ) #[[1,2],[3,4],[5,6]], 'bias' : None })
+     sn.add_layer({'type' : 'dense', 'num_inputs' : 10, 'num_outputs' : 15, 'relu': True, 'sigmoid': False, 'weights': None, 'bias' : None} )  #[[1,2,3],[3,4, 5] ], 'bias' : None })
+     sn.add_layer({'type' : 'dense', 'num_inputs' : 15, 'num_outputs' : 20, 'relu': True, 'sigmoid': False, 'weights': None, 'bias' : None} )
+     sn.add_layer({'type' : 'dense', 'num_inputs' : 20, 'num_outputs' : 3, 'relu': True, 'sigmoid': False, 'weights': None , 'bias': None } )  # [[-1,0],[0,-1] ], 'bias' : None })    
+     sn.add_layer({'type' : 'softmax'})
+     
+     ctrain, means, stds = condition_data(iris_train)
+     
+     
+     # this classifies 85.3% correct!
+     sn.bsgd(training=ctrain, labels=label_train, batch_size=16, max_streams=10, epochs=100 , delta=0.0001, training_rate=1)
+     
+     # this gives 60% hit rate
+     # sn.bsgd(training=ctrain, labels=label_train, batch_size=16, max_streams=5, epochs=200 , delta=0.00001, training_rate=1)
+     # 
+     
+     #ctest, _, _ = condition_data(iris_test, means=means, stds=stds)
+     
+     hits = 0
+     ctest, _, _ = condition_data(iris_test, means=means, stds=stds)
+     for i in range(ctest.shape[0]):
+         if np.argmax(sn.predict(ctest[i,:])) == np.argmax(label_test[i,:]):
+             hits += 1
+     
+     
+     print 'percentage correct %s' % (float(hits) / ctest.shape[0])
+         
