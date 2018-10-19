@@ -7,7 +7,6 @@ from pycuda.elementwise import ElementwiseKernel
 import numpy as np
 from Queue import Queue
 import csv
-
 from time import time
 
 MAX_ENTROPY = 1
@@ -15,10 +14,9 @@ MAX_ENTROPY = 1
 def cross_entropy(predictions=None, ground_truth=None):
     
     if predictions is None or ground_truth is None:
-        raise Exception("error!  Both predictions and ground truth must be float32 arrays")
+        raise Exception("Error!  Both predictions and ground truth must be float32 arrays")
     
     p = np.array(predictions).copy()
-    
     y = np.array(ground_truth).copy()
     
     if p.shape != y.shape:
@@ -27,29 +25,16 @@ def cross_entropy(predictions=None, ground_truth=None):
     if len(p.shape) != 2:
         raise Exception("Error!  Both predictions and ground_truth must be 2D arrays.")
     
-    
-    
     total_entropy = 0
     
     for i in range(p.shape[0]):
         for j in range(p.shape[1]):
             
-            if y[i,j] == 1:
-            
-                total_entropy += min( np.abs( np.nan_to_num(  np.log( p[i,j] ) ) ) , MAX_ENTROPY)
-                
-            else:
-                
+            if y[i,j] == 1:            
+                total_entropy += min( np.abs( np.nan_to_num(  np.log( p[i,j] ) ) ) , MAX_ENTROPY)             
+            else:             
                 total_entropy += min( np.abs( np.nan_to_num( np.log( 1 - p[i,j] ) ) ), MAX_ENTROPY)
-                
-            #else:
-            #    temp = 0
-            #    temp += min( np.abs( np.nan_to_num( ( 1 - y[i,j]) * (1 -np.log( 1 - p[i,j] ) ) ) ), MAX_ENTROPY/2)
-            #    temp += min( np.abs( np.nan_to_num( y[i,j] * (np.log( p[i,j] ) ) ) ), MAX_ENTROPY/2)    
-            
-            #    total_entropy += temp
-        #total_entropy += -np.sum(y[i,:] * np.nan_to_num( np.log(p[i,:]) ) + (1 - y[i,:]) * np.nan_to_num(np.log(1 - p[i,:])) )
-        
+    
     return total_entropy / p.size
 
 
@@ -83,32 +68,29 @@ __global__ void dense_eval(int num_outputs, int num_inputs, int relu, int sigmoi
               
               y[k * num_outputs + i] = (float) temp;                 
          }
-    }
+    
          
-            
-            // modify this here
-    if( w_t >= 0 && i == (w_t / num_inputs))
-    {
-          int j = w_t % num_inputs;
-          
-          for(int k=0; k < batch_size; k++)
-              y[k*num_outputs + i] += delta*x[k*num_inputs+j];
+        
+        if( w_t >= 0 && i == (w_t / num_inputs))
+        {
+              int j = w_t % num_inputs;
               
-          
-    }
-     
-    if( b_t >= 0 && i == b_t )
-    {
-          //int j = b_t % num_inputs;
-          
-          for(int k=0; k < batch_size; k++)
-              y[k*num_outputs + i] += delta; // delta*x[k*num_inputs+j];
-    }
+              for(int k=0; k < batch_size; k++)
+                  y[k*num_outputs + i] += delta*x[k*num_inputs+j];
+                  
+              
+        }
+         
+        if( b_t >= 0 && i == b_t )
+        {
+              //int j = b_t % num_inputs;
+              
+              for(int k=0; k < batch_size; k++)
+                  y[k*num_outputs + i] += delta;
+        }
     
     
-    if(relu > 0 || sigmoid > 0)
-        if (i < num_outputs)
-         {
+        if(relu > 0 || sigmoid > 0)
              for(int k=0; k < batch_size; k++)
              {    
                   float temp = y[k * num_outputs + i];
@@ -124,9 +106,9 @@ __global__ void dense_eval(int num_outputs, int num_inputs, int relu, int sigmoi
                   
                   y[k * num_outputs + i] = temp;                 
              }
-        }
+            
     
-    
+    }
     
     
          
@@ -135,14 +117,11 @@ __global__ void dense_eval(int num_outputs, int num_inputs, int relu, int sigmoi
 '''
 
 eval_mod = SourceModule(DenseEvalCode)
-
 eval_ker = eval_mod.get_function('dense_eval')
 
-
 class DenseLayer:
-    
     def __init__(self, num_inputs=None, num_outputs=None, weights=None, b=None, stream=None, \
-    relu=False, sigmoid=False, dropout=None, delta=None):
+    relu=False, sigmoid=False, delta=None):
         
         self.stream = stream
         
@@ -152,7 +131,7 @@ class DenseLayer:
             self.delta = np.float32(delta)
         
         if weights is None:
-            weights = np.random.rand(num_outputs, num_inputs) - .5
+            weights = (np.random.rand(num_outputs, num_inputs) -.5 ) 
             self.num_inputs = np.int32(num_inputs)
             self.num_outputs = np.int32(num_outputs)            
         
@@ -192,6 +171,9 @@ class DenseLayer:
 
     def eval_(self, x, y=None, batch_size=None, stream=None, delta=None, w_t = None, b_t = None):
     
+        if stream is None:
+            stream = self.stream
+        
         if type(x) != pycuda.gpuarray.GPUArray:
             x = gpuarray.to_gpu_async(np.array(x,dtype=np.float32) , stream=self.stream)
             
@@ -225,62 +207,7 @@ class DenseLayer:
                  delta , block=self.block, grid=self.grid , stream=stream)
         
         return y
-        
-        
-    def eval_batch():
-        pass
-        
-    def eval_batch_weight():
-        pass
-        
-        
-DropoutCode = '''
-#include <curand_kernel.h>
-#define ULL  unsigned long long
 
-// dropout layer is for training
-// use CuRAND here
-
-extern "C" {
-
-    __global__ void dropout_layer(int num, float *x, float *y, int batch_size, float prob)
-    {
-        
-        
-        int i = blockIdx.x * blockDim.x + threadIdx.x;
-        
-        if (i < num)
-        {
-            curandState cr_state;
-            
-            curand_init( (ULL)  clock(), (ULL) i, (ULL) 0, &cr_state);
-    
-    
-            for(int k =0; k < batch_size; k++)
-            {
-                if ( curand_uniform(&cr_state) <= prob)
-                    y[k*num + i] = 0.0f;
-                else
-                    y[k*num + i] = x[k*num + i];
-            }
-        }
-    }
-
-}
-'''  
-
-dropout_mod = SourceModule(no_extern_c=True, source=DropoutCode)
-
-dropout_ker = dropout_mod.get_function('dropout_layer')
-        
-class DropoutLayer:
-    def __init__(self):
-        pass
-        
-        
-
-
-#exp_ker = ElementwiseKernel("float * x, float * y", "y[i] = expf(x[i]);",  "exp_ker")
 
 # threads: at least "num"
 SoftmaxExpCode='''
@@ -333,11 +260,14 @@ mean_ker = mean_mod.get_function('softmax_mean')
 class SoftmaxLayer:
     def __init__(self, num=None, stream=None):
         self.num = np.int32(num)
-        self.stream = None
+        self.stream = stream
         
         
     def eval_(self, x, y=None, batch_size=None, stream=None):
-
+        
+        if stream is None:
+            stream = self.stream
+        
         if type(x) != pycuda.gpuarray.GPUArray:
             temp = np.array(x,dtype=np.float32)
             x = gpuarray.to_gpu_async( temp , stream=stream)
@@ -382,7 +312,7 @@ class SequentialNetwork:
             
             
         if delta is None:
-            delta = 0.001
+            delta = 0.0001
             
         self.delta = delta
         self.max_batch_size=max_batch_size
@@ -446,13 +376,11 @@ class SequentialNetwork:
 
             
     
-    # assuming batch_size = 1
     def predict(self, x, stream=None):
         
         if stream is None:
             stream = self.stream
         
-        #if(x.shape != self.network_mem)
         if type(x) != np.ndarray:
             temp = np.array(x, dtype = np.float32)
             x = temp
@@ -474,7 +402,6 @@ class SequentialNetwork:
             batch_size = 1
         
         for i in xrange(len(self.network)):
-            
             self.network[i].eval_(x=self.network_mem[i], y = self.network_mem[i+1], batch_size=batch_size, stream = stream)
             
         y = self.network_mem[-1].get_async(stream=stream)
@@ -485,28 +412,16 @@ class SequentialNetwork:
         return y
     
     
-    
-    # w_t :  weight to check
-    #  (bank, weight)
-    # b_t : bias to check
-    # (bank, bias)
-    
     def partial_predict(self, layer_index=None, w_t=None, b_t=None, partial_mem=None, stream=None, batch_size=None, delta=None):
         
         self.network[layer_index].eval_(x=self.network_mem[layer_index], y = partial_mem[layer_index+1], batch_size=batch_size, stream = stream, w_t=w_t, b_t=b_t, delta=delta)
         
         for i in xrange(layer_index+1, len(self.network)):
             self.network[i].eval_(x=partial_mem[i], y =partial_mem[i+1], batch_size=batch_size, stream = stream)
+
             
-        #y = partial_mem[-1]
-        
-        #return y
-            
-            
-    #def test(self, testing=None, labels=None):
-    # batch stochastic gradient descent
     
-    def bsgd(self, training=None, training_rate=0.01, labels=None, delta=None, max_streams = None, batch_size = None, epochs = 1):
+    def bsgd(self, training=None, labels=None, delta=None, max_streams = None, batch_size = None, epochs = 1, training_rate=0.01):
         
         training_rate = np.float32(training_rate)
         
@@ -551,6 +466,8 @@ class SequentialNetwork:
         if batch_size is None:
             batch_size = self.max_batch_size
         
+        index = range(training.shape[0])
+        
         for k in xrange(epochs):    
             
             print '-----------------------------------------------------------'
@@ -560,9 +477,11 @@ class SequentialNetwork:
             
             all_grad = []
             
-            for _ in xrange( int(np.ceil(training.shape[0] / batch_size)) ):
+            np.random.shuffle(index)
             
-                batch_index = np.random.choice(num_points, batch_size, replace=False)
+            for r in xrange( int(np.floor(training.shape[0] / batch_size)) ):
+            
+                batch_index = index[r*batch_size:(r+1)*batch_size] 
                 
                 batch_training = training[batch_index, :]
                 batch_labels = labels[batch_index, :]
@@ -574,10 +493,6 @@ class SequentialNetwork:
                 print 'entropy: %s' % cur_entropy
                 
                 # need to iterate over each weight / bias , check entropy
-                # def partial_predict(self, layer_index=None, w_t=None, b_t=None, partial_mem=None, stream=None, batch_size=None):
-                
-                
-                
                 
                 for i in xrange(len(self.network)):
                     
@@ -628,11 +543,9 @@ class SequentialNetwork:
                             
                             w_entropy = cross_entropy(predictions=w_predictions[:batch_size,:], ground_truth=batch_labels)
                             
-                            
-                            
+
                             if wb[0] == 'w':
                                 w_t = wb[1]
-                                # subtract entropy, divide by delta
                                 grad_w[w_t] = -(w_entropy - cur_entropy) / delta
                                 
                             elif wb[0] == 'b':
@@ -646,15 +559,10 @@ class SequentialNetwork:
                 if self.network_summary[i][0] == 'dense':
                 
                     new_weights = self.network[i].weights.get()
-                    
                     new_weights += training_rate*all_grad[i][0]
-                    
                     new_bias = self.network[i].b.get()
-                    
                     new_bias += training_rate*all_grad[i][1]
-                    
                     self.network[i].weights.set(new_weights)
-                    
                     self.network[i].b.set(new_bias)
                     
     
@@ -718,7 +626,7 @@ if __name__ == '__main__':
      iris_data = []
      iris_labels = []
      
-     with open('c:/users/btuom/examples/9/iris.data', 'rb') as csvfile:
+     with open('C:/Users/btuom/examples/9/iris.data', 'rb') as csvfile:
          csvreader = csv.reader(csvfile, delimiter=',')
          for row in csvreader:
              newrow = []
@@ -736,9 +644,9 @@ if __name__ == '__main__':
      iris_data = np.float32(iris_data)
      iris_labels = np.float32(iris_labels)
      iris_data = iris_data[shuffled_index, :]
-     iris_labels = iris_labels[shuffled_index]
+     iris_labels = iris_labels[shuffled_index,:]
      
-     test_len = iris_len // 2
+     test_len = (2*iris_len) // 3
      
      iris_train = iris_data[:test_len, :]
      label_train = iris_labels[:test_len, :]
@@ -757,8 +665,7 @@ if __name__ == '__main__':
      
      # this classifies 85.3% correct!
      sn.add_layer({'type' : 'dense', 'num_inputs' : 4, 'num_outputs' : 10, 'relu': True, 'sigmoid': False, 'weights' : None, 'bias' : None} ) #[[1,2],[3,4],[5,6]], 'bias' : None })
-     sn.add_layer({'type' : 'dense', 'num_inputs' : 10, 'num_outputs' : 15, 'relu': True, 'sigmoid': False, 'weights': None, 'bias' : None} )  #[[1,2,3],[3,4, 5] ], 'bias' : None })
-     sn.add_layer({'type' : 'dense', 'num_inputs' : 15, 'num_outputs' : 20, 'relu': True, 'sigmoid': False, 'weights': None, 'bias' : None} )
+     sn.add_layer({'type' : 'dense', 'num_inputs' : 10, 'num_outputs' : 20, 'relu': True, 'sigmoid': False, 'weights': None, 'bias' : None} )  #[[1,2,3],[3,4, 5] ], 'bias' : None })
      sn.add_layer({'type' : 'dense', 'num_inputs' : 20, 'num_outputs' : 3, 'relu': True, 'sigmoid': False, 'weights': None , 'bias': None } )  # [[-1,0],[0,-1] ], 'bias' : None })    
      sn.add_layer({'type' : 'softmax'})
      
@@ -766,7 +673,7 @@ if __name__ == '__main__':
      
      
      # this classifies 85.3% correct!
-     sn.bsgd(training=ctrain, labels=label_train, batch_size=16, max_streams=10, epochs=100 , delta=0.0001, training_rate=1)
+     sn.bsgd(training=ctrain, labels=label_train, batch_size=16, max_streams=10, epochs=300 , delta=0.0001, training_rate=.1)
      
      # this gives 60% hit rate
      # sn.bsgd(training=ctrain, labels=label_train, batch_size=16, max_streams=5, epochs=200 , delta=0.00001, training_rate=1)
