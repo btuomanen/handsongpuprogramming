@@ -583,42 +583,6 @@ def condition_data(data, means=None, stds=None):
     return (conditioned_data, means, stds)
                         
                             
-                            
-
-        
-        
-        
-if __name__ == '__main_343424_':
-    cross_entropy([[1,0]],[[1,0]])
-        
-                
-                
-        
-    
-if __name__ == '__main_231314123_':
-    sn = SequentialNetwork( max_batch_size=10 )
-    sn.add_layer({'type' : 'dense', 'num_inputs' : 4, 'num_outputs' : 8, 'relu': True, 'sigmoid': False, 'weights' : None, 'bias' : None} ) #[[1,2],[3,4],[5,6]], 'bias' : None })
-    sn.add_layer({'type' : 'dense', 'num_inputs' : 8, 'num_outputs' : 10, 'relu': True, 'sigmoid': False, 'weights': None, 'bias' : None} )  #[[1,2,3],[3,4, 5] ], 'bias' : None })
-   
-    
-    sn.add_layer({'type' : 'dense', 'num_inputs' : 10, 'num_outputs' : 3, 'relu': True, 'sigmoid': False, 'weights': None , 'bias': None } )  # [[-1,0],[0,-1] ], 'bias' : None })    
-    sn.add_layer({'type' : 'softmax'})
-    
-    
-    
-    
-    
-    x = np.float32([[1,1],[1,0]])
-    y = sn.predict(x)
-    
-    #print y
-    
-    t1 = time()
-    sn.bsgd(training=[[1,0],[0,1],[0,0] ], labels=[[1,0],[0,1], [0,1] ], batch_size=3, max_streams=10, epochs=100 , delta=0.01, training_rate=.1)
-    total_time = time() - t1
-    
-    print 'time: %s' % total_time
-    
     
 if __name__ == '__main__':
      to_class = { 'Iris-setosa' : [1,0,0] , 'Iris-versicolor' : [0,1,0], 'Iris-virginica' : [0,0,1]}
@@ -636,6 +600,7 @@ if __name__ == '__main__':
                  newrow.append(row[i])
              iris_data.append(newrow)
              iris_labels.append(to_class[row[4]])
+             
      iris_len = len(iris_data)
      shuffled_index = list(range(iris_len))
      np.random.shuffle(shuffled_index)
@@ -646,40 +611,30 @@ if __name__ == '__main__':
      iris_data = iris_data[shuffled_index, :]
      iris_labels = iris_labels[shuffled_index,:]
      
-     test_len = (2*iris_len) // 3
+     t_len = (2*iris_len) // 3
      
-     iris_train = iris_data[:test_len, :]
-     label_train = iris_labels[:test_len, :]
+     iris_train = iris_data[:t_len, :]
+     label_train = iris_labels[:t_len, :]
      
-     iris_test = iris_data[test_len:,:]
-     label_test = iris_labels[test_len:, :]
+     iris_test = iris_data[t_len:,:]
+     label_test = iris_labels[t_len:, :]
      
      
      sn = SequentialNetwork( max_batch_size=32 )
-     # this gives 60% accuracy
-#     sn.add_layer({'type' : 'dense', 'num_inputs' : 4, 'num_outputs' : 8, 'relu': True, 'sigmoid': False, 'weights' : None, 'bias' : None} ) #[[1,2],[3,4],[5,6]], 'bias' : None })
-#     sn.add_layer({'type' : 'dense', 'num_inputs' : 8, 'num_outputs' : 10, 'relu': True, 'sigmoid': False, 'weights': None, 'bias' : None} )  #[[1,2,3],[3,4, 5] ], 'bias' : None })
-#     
-#     sn.add_layer({'type' : 'dense', 'num_inputs' : 10, 'num_outputs' : 3, 'relu': True, 'sigmoid': False, 'weights': None , 'bias': None } )  # [[-1,0],[0,-1] ], 'bias' : None })    
-#     sn.add_layer({'type' : 'softmax'})
-     
-     # this classifies 85.3% correct!
-     sn.add_layer({'type' : 'dense', 'num_inputs' : 4, 'num_outputs' : 10, 'relu': True, 'sigmoid': False, 'weights' : None, 'bias' : None} ) #[[1,2],[3,4],[5,6]], 'bias' : None })
-     sn.add_layer({'type' : 'dense', 'num_inputs' : 10, 'num_outputs' : 20, 'relu': True, 'sigmoid': False, 'weights': None, 'bias' : None} )  #[[1,2,3],[3,4, 5] ], 'bias' : None })
-     sn.add_layer({'type' : 'dense', 'num_inputs' : 20, 'num_outputs' : 3, 'relu': True, 'sigmoid': False, 'weights': None , 'bias': None } )  # [[-1,0],[0,-1] ], 'bias' : None })    
+
+
+     sn.add_layer({'type' : 'dense', 'num_inputs' : 4, 'num_outputs' : 20, 'relu': True, 'sigmoid': False, 'weights' : None, 'bias' : None} ) #[[1,2],[3,4],[5,6]], 'bias' : None })
+     #sn.add_layer({'type' : 'dense', 'num_inputs' : 6, 'num_outputs' : 20, 'relu': True, 'sigmoid': False, 'weights': None, 'bias' : None} )  #[[1,2,3],[3,4, 5] ], 'bias' : None })
+     sn.add_layer({'type' : 'dense', 'num_inputs' : 20, 'num_outputs' : 8, 'relu': True, 'sigmoid': False, 'weights': None, 'bias' : None} )  #[[1,2,3],[3,4, 5] ], 'bias' : None })
+     sn.add_layer({'type' : 'dense', 'num_inputs' : 8, 'num_outputs' : 3, 'relu': True, 'sigmoid': False, 'weights': None , 'bias': None } )  # [[-1,0],[0,-1] ], 'bias' : None })    
      sn.add_layer({'type' : 'softmax'})
      
      ctrain, means, stds = condition_data(iris_train)
      
-     
-     # this classifies 85.3% correct!
-     sn.bsgd(training=ctrain, labels=label_train, batch_size=16, max_streams=10, epochs=300 , delta=0.0001, training_rate=.1)
-     
-     # this gives 60% hit rate
-     # sn.bsgd(training=ctrain, labels=label_train, batch_size=16, max_streams=5, epochs=200 , delta=0.00001, training_rate=1)
-     # 
-     
-     #ctest, _, _ = condition_data(iris_test, means=means, stds=stds)
+
+     t1 = time()
+     sn.bsgd(training=ctrain, labels=label_train, batch_size=16, max_streams=10, epochs=100 , delta=0.001, training_rate=1)
+     training_time = time() - t1
      
      hits = 0
      ctest, _, _ = condition_data(iris_test, means=means, stds=stds)
@@ -688,5 +643,5 @@ if __name__ == '__main__':
              hits += 1
      
      
-     print 'percentage correct %s' % (float(hits) / ctest.shape[0])
-         
+     print 'Correct Classifications: %s' % (float(hits * 100) / ctest.shape[0])
+     print 'Total Training Time: %s' % training_time
