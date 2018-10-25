@@ -1,4 +1,9 @@
-//  compile with:  nvcc -Xcompiler -fPIC -shared -o mandelbrot.dll mandelbrot.cu
+// Compile into a shared library for ctypes (see "mandelbrot_ctypes.py")
+//  Windows: "nvcc -shared -o mandelbrot.dll mandelbrot.cu"
+//  Linux: "nvcc -Xcompiler -fPIC -shared -o mandelbrot.so mandelbrot.cu"
+
+// Compile into a PTX binary (see "mandelbrot_ptx.py")
+//  For both Windows and Linux:  "nvcc -ptx -o mandelbrot.ptx mandelbrot.cu"
 
 #include <cuda_runtime.h>
 #include <stdio.h>
@@ -6,7 +11,7 @@
 #include <math.h>
 
 
-__global__ void mandelbrot_ker(float * lattice, float * mandelbrot_graph, int max_iters, float upper_bound, int lattice_size)
+extern "C" __global__ void mandelbrot_ker(float * lattice, float * mandelbrot_graph, int max_iters, float upper_bound_squared, int lattice_size)
 {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     
@@ -33,7 +38,7 @@ __global__ void mandelbrot_ker(float * lattice, float * mandelbrot_graph, int ma
             z_im = 2*z_re*z_im + c_im;
             z_re = temp;
             
-            if ( (z_re*z_re + z_im*z_im) > upper_bound )
+            if ( (z_re*z_re + z_im*z_im) > upper_bound_squared )
             {
                 mandelbrot_graph[tid] = 0;
                 break;
@@ -46,6 +51,7 @@ __global__ void mandelbrot_ker(float * lattice, float * mandelbrot_graph, int ma
     return;
 }
 
+// Linux users:  remove "__declspec(dllexport)" from the line below.
 extern "C" __declspec(dllexport) void launch_mandelbrot(float * lattice,  float * mandelbrot_graph, int max_iters, float upper_bound, int lattice_size)
 {
     
@@ -62,7 +68,7 @@ extern "C" __declspec(dllexport) void launch_mandelbrot(float * lattice,  float 
     
     int grid_size = (int)  ceil(  ( (double) lattice_size*lattice_size ) / ( (double) 32 ) );
     
-    mandelbrot_ker <<< grid_size, 32 >>> (d_lattice,  d_mandelbrot_graph, max_iters, upper_bound, lattice_size);
+    mandelbrot_ker <<< grid_size, 32 >>> (d_lattice,  d_mandelbrot_graph, max_iters, upper_bound*upper_bound, lattice_size);
     
     cudaMemcpy(mandelbrot_graph, d_mandelbrot_graph, num_bytes_graph, cudaMemcpyDeviceToHost);
 
