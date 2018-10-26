@@ -36,7 +36,7 @@ if __name__ == '__main__':
 
     print 'It took %s seconds to calculate the Mandelbrot graph.' % mandel_time
     
-    fig = plt.figure(1)
+    plt.figure(1)
     plt.imshow(mandel, extent=(-2, 2, -2, 2))
     plt.show()
 
