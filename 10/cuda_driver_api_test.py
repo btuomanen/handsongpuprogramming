@@ -9,7 +9,7 @@ high = 2
 breadth = 512
 
 # NOW FULLY WORKING!!!!!!9r389389893r289fwe89jrwg89jgjgefbjoifb
-
+# doesn't work with prtinfs in kernel... do I have to change cuLaucnhKernel somehow?
 
 # CUDA_SUCCESS = 0
 # The API call returned with no errors. In the case of query calls, this also means that the operation being queried is complete (see cuEventQuery() and cuStreamQuery()). 
@@ -164,7 +164,7 @@ mandel_params = (c_void_p * len(mandel_args))(*mandel_args)
 
 gridsize = int(np.ceil(lattice.size**2 / 32))
 
-lk_out = cuLaunchKernel(mandel_ker, gridsize, 1, 1, 32, 1, 1, 0, 0, mandel_params, None) #cast(mandel_params, POINTER(c_void_p)), None)
+lk_out = cuLaunchKernel(mandel_ker, gridsize, 1, 1, 32, 1, 1, 0, None, mandel_params, None) #cast(mandel_params, POINTER(c_void_p)), None)
 print 'luanchker out %s ' % lk_out
 # synchronize context
 ctx_out = cuCtxSynchronize()
