@@ -7,6 +7,15 @@ low = -2
 high = 2
 breadth = 512
 
+# CUDA_SUCCESS = 0
+# The API call returned with no errors. In the case of query calls, this also means that the operation being queried is complete (see cuEventQuery() and cuStreamQuery()). 
+
+# CUDA_ERROR_INVALID_IMAGE = 200
+# This indicates that the device kernel image is invalid. This can also indicate an invalid CUDA module. 
+
+# CUDA_ERROR_INVALID_HANDLE = 400
+# This indicates that a resource handle passed to the API call was not valid. Resource handles are opaque types like CUstream and CUevent. 
+
 cuda = CDLL('nvcuda.dll')
 
 #def cuInit(Flags):
