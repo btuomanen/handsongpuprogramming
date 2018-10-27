@@ -8,7 +8,7 @@ low = -2
 high = 2
 breadth = 512
 
-
+# NOW FULLY WORKING!!!!!!9r389389893r289fwe89jrwg89jgjgefbjoifb
 
 
 # CUDA_SUCCESS = 0
@@ -58,11 +58,17 @@ cuDeviceGet(byref(cuDevice), 0)
 
 print 'cudevice %s ' % cuDevice.value
 
+
+# create context
 cuContext = c_void_p()
 
 cuCtxCreate = cuda.cuCtxCreate
 cuCtxCreate.argtypes = [c_void_p, c_int, c_int]
 cuCtxCreate(byref(cuContext), 0, cuDevice)
+
+
+
+
 
 cuModule = c_void_p()
 
@@ -72,6 +78,16 @@ cuModuleLoad.restype  = int
 ml_out = cuModuleLoad(byref(cuModule), c_char_p('./mandelbrot.ptx'))
 print 'moduleload %s' % ml_out
 
+# wrapper for context synchronization
+
+cuCtxSynchronize = cuda.cuCtxSynchronize
+
+cuCtxSynchronize.argtypes = []
+cuCtxSynchronize.restype = int
+
+# synchronize context
+ctx_out = cuCtxSynchronize()
+print 'ctx sync: %s ' % ctx_out
 
 #
 lattice = np.linspace(low, high, breadth, dtype=np.float32)
@@ -82,32 +98,43 @@ lattice_c = lattice.ctypes.data_as(POINTER(c_float))
 lattice_gpu = c_void_p(0)
 
 cuMemAlloc = cuda.cuMemAlloc
-cuMemAlloc.argtypes = [POINTER(c_void_p), c_size_t]
+cuMemAlloc.argtypes = [c_void_p, c_size_t]
 cuMemAlloc.restype = int
 
-ma_out = cuMemAlloc(byref(lattice_gpu), c_size_t(lattice.size*sizeof(c_float)))
+ma_out = cuMemAlloc(addressof(lattice_gpu), c_size_t(lattice.size*sizeof(c_float)))
 
 print 'mem alloc: %s , ' % ma_out
 
+# synchronize context
+ctx_out = cuCtxSynchronize()
+print 'ctx sync: %s ' % ctx_out
+
 graph_gpu = c_void_p(0)
-ma_out = cuMemAlloc(byref(graph_gpu), c_size_t(lattice.size**2 * sizeof(c_float)))
+ma_out = cuMemAlloc(addressof(graph_gpu), c_size_t(lattice.size**2 * sizeof(c_float)))
 print 'memalloc (graph) %s' % ma_out
 
+# synchronize context
+ctx_out = cuCtxSynchronize()
+print 'ctx sync: %s ' % ctx_out
+
 graph = np.zeros(shape=(lattice.size, lattice.size), dtype=np.float32)
-graph_c = graph.ctypes.data_as(POINTER(c_float))
 
 cuMemcpyHtoD = cuda.cuMemcpyHtoD 
-cuMemcpyHtoD.argtypes = [c_void_p, c_void_p, c_int]
-h2d_out  = cuMemcpyHtoD(lattice_gpu, lattice_c, c_int(lattice.size*sizeof(c_float)))
+cuMemcpyHtoD.argtypes = [c_void_p, c_void_p, c_size_t]
+h2d_out  = cuMemcpyHtoD(lattice_gpu, lattice_c, c_size_t(lattice.size*sizeof(c_float)))
 print 'h2d %s ' % h2d_out
+
+# synchronize context
+ctx_out = cuCtxSynchronize()
+print 'ctx sync: %s ' % ctx_out
 
 mandel_ker = c_void_p(0)
 
 cuModuleGetFunction = cuda.cuModuleGetFunction
-cuModuleGetFunction.argtypes = [POINTER(c_void_p), c_void_p, c_char_p ]
+cuModuleGetFunction.argtypes = [c_void_p, c_void_p, c_char_p ]
 cuModuleGetFunction.restype = int
 
-getfun_out = cuModuleGetFunction(byref(mandel_ker), cuModule, c_char_p('mandelbrot_ker'))
+getfun_out = cuModuleGetFunction(addressof(mandel_ker), cuModule, c_char_p('mandelbrot_ker'))
 print 'cuModuleGetFUnction: %s' % getfun_out
 
 '''
@@ -120,7 +147,9 @@ unsigned int sharedMemBytes, CUstream hStream, void ** kernelParams, void ** ext
 
 cuLaunchKernel = cuda.cuLaunchKernel
 # 
-cuLaunchKernel.argtypes = [c_void_p, c_uint, c_uint, c_uint, c_uint, c_uint, c_uint, c_uint, c_void_p, POINTER(c_void_p), POINTER(c_void_p)]
+cuLaunchKernel.argtypes = [c_void_p, c_uint, c_uint, c_uint, c_uint, c_uint, c_uint, c_uint, c_void_p, c_void_p, c_void_p]
+#cuLaunchKernel.argtypes = [c_void_p, c_uint, c_uint, c_uint, c_uint, c_uint, c_uint, c_uint, c_void_p, c_void_p, c_void_p]
+
 cuLaunchKernel.restype = int
 # mandelbrot_ker(float * lattice, float * mandelbrot_graph, int max_iters, float upper_bound_squared, int lattice_size)
 max_iters = c_int(256)
@@ -129,22 +158,29 @@ lattice_size = c_int(lattice.size)
 
 pvp = POINTER(c_void_p)
 
-mandel_args0 = [byref(lattice_gpu), byref(graph_gpu), byref(max_iters), byref(upper_bound_squared), byref(lattice_size )]
-mandel_args = [cast(x, c_void_p) for x in mandel_args0]
+mandel_args0 = [lattice_gpu, graph_gpu, max_iters, upper_bound_squared, lattice_size ]
+mandel_args = [c_void_p(addressof(x)) for x in mandel_args0]
 mandel_params = (c_void_p * len(mandel_args))(*mandel_args)
 
 gridsize = int(np.ceil(lattice.size**2 / 32))
 
-lk_out = cuLaunchKernel(mandel_ker, gridsize, 1, 1, 32, 1, 1, 0, None, cast(mandel_params, POINTER(c_void_p)), None) #cast(mandel_params, POINTER(c_void_p)), None)
+lk_out = cuLaunchKernel(mandel_ker, gridsize, 1, 1, 32, 1, 1, 0, 0, mandel_params, None) #cast(mandel_params, POINTER(c_void_p)), None)
 print 'luanchker out %s ' % lk_out
-time.sleep(.2)
-cuMemcpyDtoH = cuda.cuMemcpyHtoD 
-cuMemcpyDtoH.argtypes = [c_void_p, c_void_p, c_int]
+# synchronize context
+ctx_out = cuCtxSynchronize()
+print 'ctx sync: %s ' % ctx_out
+
+cuMemcpyDtoH = cuda.cuMemcpyDtoH 
+cuMemcpyDtoH.argtypes = [c_void_p, c_void_p, c_size_t]
 cuMemcpyDtoH.restype = int
 
-d2h_out = cuMemcpyDtoH(graph_gpu, graph.ctypes.data_as(c_void_p),  c_int(lattice.size**2*sizeof(c_float)))
-time.sleep(.2)
+d2h_out = cuMemcpyDtoH( cast(graph.ctypes.data, c_void_p), graph_gpu,  c_size_t(lattice.size**2*sizeof(c_float)))
+
 print ' d2h %s' % d2h_out
+
+# synchronize context
+ctx_out = cuCtxSynchronize()
+print 'ctx sync: %s ' % ctx_out
  
 fig = plt.figure(1)
 plt.imshow(graph, extent=(-2, 2, -2, 2))
