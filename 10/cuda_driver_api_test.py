@@ -2,13 +2,28 @@ from __future__ import division
 import numpy as np
 from matplotlib import pyplot as plt
 from ctypes import *
+import time
 # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#driver-api
 low = -2
 high = 2
 breadth = 512
 
+
+
+
 # CUDA_SUCCESS = 0
 # The API call returned with no errors. In the case of query calls, this also means that the operation being queried is complete (see cuEventQuery() and cuStreamQuery()). 
+
+
+# culaunchkernel gives this..
+# CUDA_ERROR_INVALID_VALUE = 1
+# This indicates that one or more of the parameters passed to the API call is not within an acceptable range of values. 
+
+
+
+
+
+# this stuff happens with printf
 
 # CUDA_ERROR_INVALID_IMAGE = 200
 # This indicates that the device kernel image is invalid. This can also indicate an invalid CUDA module. 
@@ -120,14 +135,16 @@ mandel_params = (c_void_p * len(mandel_args))(*mandel_args)
 
 gridsize = int(np.ceil(lattice.size**2 / 32))
 
-lk_out = cuLaunchKernel(mandel_ker, gridsize, 1, 1, 32, 1, 1, 0, None, None, None) #cast(mandel_params, POINTER(c_void_p)), None)
+lk_out = cuLaunchKernel(mandel_ker, gridsize, 1, 1, 32, 1, 1, 0, None, cast(mandel_params, POINTER(c_void_p)), None) #cast(mandel_params, POINTER(c_void_p)), None)
 print 'luanchker out %s ' % lk_out
-
+time.sleep(.2)
 cuMemcpyDtoH = cuda.cuMemcpyHtoD 
 cuMemcpyDtoH.argtypes = [c_void_p, c_void_p, c_int]
-cuMemcpyDtoH(cast(graph_c, c_void_p), graph_gpu, c_int(lattice.size**2*sizeof(c_float)))
+cuMemcpyDtoH.restype = int
 
-
+d2h_out = cuMemcpyDtoH(graph_gpu, graph.ctypes.data_as(c_void_p),  c_int(lattice.size**2*sizeof(c_float)))
+time.sleep(.2)
+print ' d2h %s' % d2h_out
  
 fig = plt.figure(1)
 plt.imshow(graph, extent=(-2, 2, -2, 2))
