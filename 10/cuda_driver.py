@@ -21,11 +21,11 @@ cuDeviceGet.argtypes = [POINTER(c_int), c_int]
 cuDeviceGet.restype = int
 
 cuCtxCreate = cuda.cuCtxCreate
-cuCtxCreate.argtypes = [c_void_p, c_int, c_int]
+cuCtxCreate.argtypes = [c_void_p, c_uint, c_int]
 cuCtxCreate.restype = int
 
 cuModuleLoad = cuda.cuModuleLoad
-cuModuleLoad.argtypes = [POINTER(c_void_p), c_char_p]
+cuModuleLoad.argtypes = [c_void_p, c_char_p]
 cuModuleLoad.restype  = int
 
 cuCtxSynchronize = cuda.cuCtxSynchronize
@@ -48,13 +48,13 @@ cuMemcpyDtoH = cuda.cuMemcpyDtoH
 cuMemcpyDtoH.argtypes = [c_void_p, c_void_p, c_size_t]
 cuMemcpyDtoH.restype = int
 
-cuLaunchKernel = cuda.cuLaunchKernel
-cuLaunchKernel.argtypes = [c_void_p, c_uint, c_uint, c_uint, c_uint, c_uint, c_uint, c_uint, c_void_p, c_void_p, c_void_p]
-cuLaunchKernel.restype = int
-
 cuMemFree = cuda.cuMemFree
 cuMemFree.argtypes = [c_void_p] 
 cuMemFree.restype = int
+
+cuLaunchKernel = cuda.cuLaunchKernel
+cuLaunchKernel.argtypes = [c_void_p, c_uint, c_uint, c_uint, c_uint, c_uint, c_uint, c_uint, c_void_p, c_void_p, c_void_p]
+cuLaunchKernel.restype = int
 
 cuCtxDestroy = cuda.cuCtxDestroy
 cuCtxDestroy.argtypes = [c_void_p]
