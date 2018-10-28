@@ -23,27 +23,20 @@ def mandelbrot(breadth, low, high, max_iters, upper_bound):
     cuModule = c_void_p()
     cuModuleLoad(byref(cuModule), c_char_p('./mandelbrot.ptx'))
 
-    #cuCtxSynchronize()
-
     lattice = np.linspace(low, high, breadth, dtype=np.float32)
     lattice_c = lattice.ctypes.data_as(POINTER(c_float))
     lattice_gpu = c_void_p(0)
 
     cuMemAlloc(addressof(lattice_gpu), c_size_t(lattice.size*sizeof(c_float)))
 
-    #cuCtxSynchronize()
-
     graph_gpu = c_void_p(0)
     cuMemAlloc(addressof(graph_gpu), c_size_t(lattice.size**2 * sizeof(c_float)))
 
-    # synchronize context
-    #cuCtxSynchronize()
-
+    
+    # Set up graph output for host.  Notice that this acts like a host-side "malloc", and we ca
     graph = np.zeros(shape=(lattice.size, lattice.size), dtype=np.float32)
 
     cuMemcpyHtoD(lattice_gpu, lattice_c, c_size_t(lattice.size*sizeof(c_float)))
-
-    #cuCtxSynchronize()
 
     mandel_ker = c_void_p(0)
 
@@ -61,19 +54,17 @@ def mandelbrot(breadth, low, high, max_iters, upper_bound):
     
     cuLaunchKernel(mandel_ker, gridsize, 1, 1, 32, 1, 1, 10000, None, mandel_params, None)
 
-    # synchronize context
+    # synchronize context after kernel launch
     cuCtxSynchronize()
 
-
+    
     cuMemcpyDtoH( cast(graph.ctypes.data, c_void_p), graph_gpu,  c_size_t(lattice.size**2*sizeof(c_float)))
-
     
     cuMemFree(lattice_gpu)
     cuMemFree(graph_gpu)
     
     cuCtxDestroy(cuContext)
 
-    
     return graph
 
 
