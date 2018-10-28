@@ -1,8 +1,8 @@
-// Compile into a shared library for ctypes (see "mandelbrot_ctypes.py")
+// Compile into a shared library for ctypes (required for "mandelbrot_ctypes.py")
 //  Windows: "nvcc -shared -o mandelbrot.dll mandelbrot.cu"
 //  Linux: "nvcc -Xcompiler -fPIC -shared -o mandelbrot.so mandelbrot.cu"
 
-// Compile into a PTX binary (see "mandelbrot_ptx.py")
+// Compile into a PTX binary (required for "mandelbrot_ptx.py" and "mandelbrot_driver.py")
 //  For both Windows and Linux:  "nvcc -ptx -o mandelbrot.ptx mandelbrot.cu"
 
 #include <cuda_runtime.h>
