@@ -13,6 +13,10 @@ def mandelbrot(breadth, low, high, max_iters, upper_bound):
 
     cnt = c_int(0)
     cuDeviceGetCount(byref(cnt))
+    
+    if cnt.value == 0:
+        raise Exception('No GPU device found!')
+    
 
     cuDevice = c_int(0)
     cuDeviceGet(byref(cuDevice), 0)
@@ -27,10 +31,10 @@ def mandelbrot(breadth, low, high, max_iters, upper_bound):
     lattice_c = lattice.ctypes.data_as(POINTER(c_float))
     lattice_gpu = c_void_p(0)
 
-    cuMemAlloc(addressof(lattice_gpu), c_size_t(lattice.size*sizeof(c_float)))
+    cuMemAlloc(byref(lattice_gpu), c_size_t(lattice.size*sizeof(c_float)))
 
     graph_gpu = c_void_p(0)
-    cuMemAlloc(addressof(graph_gpu), c_size_t(lattice.size**2 * sizeof(c_float)))
+    cuMemAlloc(byref(graph_gpu), c_size_t(lattice.size**2 * sizeof(c_float)))
 
     
     # Set up graph output for host.  Notice that this acts like a host-side "malloc", and we ca
@@ -40,7 +44,7 @@ def mandelbrot(breadth, low, high, max_iters, upper_bound):
 
     mandel_ker = c_void_p(0)
 
-    cuModuleGetFunction(addressof(mandel_ker), cuModule, c_char_p('mandelbrot_ker'))
+    cuModuleGetFunction(byref(mandel_ker), cuModule, c_char_p('mandelbrot_ker'))
 
     max_iters = c_int(max_iters)
     upper_bound_squared = c_float(upper_bound**2)
