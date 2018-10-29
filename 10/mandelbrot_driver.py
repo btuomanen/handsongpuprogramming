@@ -3,12 +3,9 @@ from time import time
 import matplotlib
 from matplotlib import pyplot as plt
 import numpy as np
-from ctypes import *
 from cuda_driver import *
 
 def mandelbrot(breadth, low, high, max_iters, upper_bound):
-
-    # Initialize GPU 0
     cuInit(0)
 
     cnt = c_int(0)
@@ -30,20 +27,18 @@ def mandelbrot(breadth, low, high, max_iters, upper_bound):
     lattice = np.linspace(low, high, breadth, dtype=np.float32)
     lattice_c = lattice.ctypes.data_as(POINTER(c_float))
     lattice_gpu = c_void_p(0)
-
+    
+    # Set up graph output for host.  Notice that this acts like a host-side "malloc", and we ca
+    graph = np.zeros(shape=(lattice.size, lattice.size), dtype=np.float32)
+    
     cuMemAlloc(byref(lattice_gpu), c_size_t(lattice.size*sizeof(c_float)))
 
     graph_gpu = c_void_p(0)
     cuMemAlloc(byref(graph_gpu), c_size_t(lattice.size**2 * sizeof(c_float)))
 
-    
-    # Set up graph output for host.  Notice that this acts like a host-side "malloc", and we ca
-    graph = np.zeros(shape=(lattice.size, lattice.size), dtype=np.float32)
-
     cuMemcpyHtoD(lattice_gpu, lattice_c, c_size_t(lattice.size*sizeof(c_float)))
 
     mandel_ker = c_void_p(0)
-
     cuModuleGetFunction(byref(mandel_ker), cuModule, c_char_p('mandelbrot_ker'))
 
     max_iters = c_int(max_iters)
@@ -55,7 +50,6 @@ def mandelbrot(breadth, low, high, max_iters, upper_bound):
     mandel_params = (c_void_p * len(mandel_args))(*mandel_args)
 
     gridsize = int(np.ceil(lattice.size**2 / 32))
-    
     cuLaunchKernel(mandel_ker, gridsize, 1, 1, 32, 1, 1, 10000, None, mandel_params, None)
 
     # synchronize context after kernel launch
@@ -66,7 +60,6 @@ def mandelbrot(breadth, low, high, max_iters, upper_bound):
     
     cuMemFree(lattice_gpu)
     cuMemFree(graph_gpu)
-    
     cuCtxDestroy(cuContext)
 
     return graph
